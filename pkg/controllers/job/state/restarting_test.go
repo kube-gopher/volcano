@@ -1,5 +1,5 @@
 /*
-Copyright 2024 The Volcano Authors.
+Copyright 2026 The Volcano Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -154,19 +154,19 @@ func TestRestartingState_UpdateStatus_StillWaiting(t *testing.T) {
 	}{
 		{
 			name:         "one pod short after terminating subtracted",
-			taskReplicas: []int32{3},    // total = 3
+			taskReplicas: []int32{3}, // total = 3
 			terminating:  1,
 			minAvailable: 3, // 3-1=2 < 3
 		},
 		{
 			name:         "all pods are terminating",
-			taskReplicas: []int32{4},    // total = 4
+			taskReplicas: []int32{4}, // total = 4
 			terminating:  4,
 			minAvailable: 1, // 4-4=0 < 1
 		},
 		{
 			name:         "no tasks at all",
-			taskReplicas: []int32{},     // total = 0
+			taskReplicas: []int32{}, // total = 0
 			terminating:  0,
 			minAvailable: 1, // 0-0=0 < 1
 		},
@@ -200,9 +200,9 @@ func TestRestartingState_UpdateStatus_StillWaiting(t *testing.T) {
 func TestRestartingState_UpdateStatus_MaxRetryTakesPrecedence(t *testing.T) {
 	s := &restartingState{job: makeRestartingJobInfo(3, 5)}
 	status := &vcbatch.JobStatus{
-		RetryCount:   3,    // == MaxRetry → should trigger Failed
+		RetryCount:   3, // == MaxRetry → should trigger Failed
 		Terminating:  0,
-		MinAvailable: 1,    // 5-0=5 >= 1, would satisfy Pending — but Failed wins
+		MinAvailable: 1, // 5-0=5 >= 1, would satisfy Pending — but Failed wins
 		State:        vcbatch.JobState{Phase: vcbatch.Restarting},
 	}
 

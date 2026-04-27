@@ -1,5 +1,5 @@
 /*
-Copyright 2024 The Volcano Authors.
+Copyright 2026 The Volcano Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -113,9 +113,9 @@ func TestAbortedState_Execute_ResumeUpdateFnSetsRestarting(t *testing.T) {
 // updateFn increments RetryCount on each Resume.
 func TestAbortedState_Execute_ResumeUpdateFnIncrementsRetryCount(t *testing.T) {
 	tests := []struct {
-		name          string
-		initialRetry  int32
-		wantRetry     int32
+		name         string
+		initialRetry int32
+		wantRetry    int32
 	}{
 		{"from zero", 0, 1},
 		{"from non-zero", 3, 4},
