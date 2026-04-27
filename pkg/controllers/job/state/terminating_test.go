@@ -47,13 +47,13 @@ func TestTerminatingState_Execute_ActionAgnostic(t *testing.T) {
 
 	for _, tc := range actions {
 		t.Run(tc.name, func(t *testing.T) {
-			cap := captureKillJob(t, nil)
+			c := captureKillJob(t, nil)
 			s := &terminatingState{job: makeJobInfo(vcbatch.Terminating)}
 
 			if err := s.Execute(Action{Action: tc.action}); err != nil {
 				t.Fatalf("Execute(%q) returned unexpected error: %v", tc.action, err)
 			}
-			if cap.job == nil {
+			if c.job == nil {
 				t.Fatal("KillJob was not called")
 			}
 		})
@@ -65,32 +65,32 @@ func TestTerminatingState_Execute_ActionAgnostic(t *testing.T) {
 // TestTerminatingState_Execute_UsesSoftRetainPhase verifies that Execute
 // passes PodRetainPhaseSoft so Succeeded/Failed pods are preserved.
 func TestTerminatingState_Execute_UsesSoftRetainPhase(t *testing.T) {
-	cap := captureKillJob(t, nil)
+	c := captureKillJob(t, nil)
 	s := &terminatingState{job: makeJobInfo(vcbatch.Terminating)}
 
 	if err := s.Execute(Action{Action: v1alpha1.SyncJobAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	for phase := range PodRetainPhaseSoft {
-		if _, ok := cap.podRetainPhase[phase]; !ok {
+		if _, ok := c.podRetainPhase[phase]; !ok {
 			t.Errorf("podRetainPhase missing %q", phase)
 		}
 	}
-	if len(cap.podRetainPhase) != len(PodRetainPhaseSoft) {
-		t.Errorf("podRetainPhase has %d entries, want %d", len(cap.podRetainPhase), len(PodRetainPhaseSoft))
+	if len(c.podRetainPhase) != len(PodRetainPhaseSoft) {
+		t.Errorf("podRetainPhase has %d entries, want %d", len(c.podRetainPhase), len(PodRetainPhaseSoft))
 	}
 }
 
 // TestTerminatingState_Execute_NonNilUpdateFn verifies the updateFn is not nil
 // — unlike finishedState, terminatingState drives a phase transition.
 func TestTerminatingState_Execute_NonNilUpdateFn(t *testing.T) {
-	cap := captureKillJob(t, nil)
+	c := captureKillJob(t, nil)
 	s := &terminatingState{job: makeJobInfo(vcbatch.Terminating)}
 
 	if err := s.Execute(Action{Action: v1alpha1.SyncJobAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cap.updateFn == nil {
+	if c.updateFn == nil {
 		t.Error("updateFn must not be nil for terminatingState")
 	}
 }
@@ -98,15 +98,15 @@ func TestTerminatingState_Execute_NonNilUpdateFn(t *testing.T) {
 // TestTerminatingState_Execute_PassesJobInfo verifies the correct JobInfo
 // pointer is forwarded to KillJob.
 func TestTerminatingState_Execute_PassesJobInfo(t *testing.T) {
-	cap := captureKillJob(t, nil)
+	c := captureKillJob(t, nil)
 	info := makeJobInfo(vcbatch.Terminating)
 	s := &terminatingState{job: info}
 
 	if err := s.Execute(Action{Action: v1alpha1.SyncJobAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cap.job != info {
-		t.Errorf("KillJob received wrong JobInfo: got %p, want %p", cap.job, info)
+	if c.job != info {
+		t.Errorf("KillJob received wrong JobInfo: got %p, want %p", c.job, info)
 	}
 }
 
@@ -160,7 +160,7 @@ func TestTerminatingState_Execute_UpdateFnAlivePods(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cap := captureKillJob(t, nil)
+			c := captureKillJob(t, nil)
 			s := &terminatingState{job: makeJobInfo(vcbatch.Terminating)}
 
 			if err := s.Execute(Action{Action: v1alpha1.SyncJobAction}); err != nil {
@@ -168,7 +168,7 @@ func TestTerminatingState_Execute_UpdateFnAlivePods(t *testing.T) {
 			}
 
 			originalPhase := tc.status.State.Phase
-			changed := cap.updateFn(&tc.status)
+			changed := c.updateFn(&tc.status)
 
 			if changed {
 				t.Error("updateFn should return false while alive pods exist")
@@ -208,14 +208,14 @@ func TestTerminatingState_Execute_UpdateFnAllPodsGone(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cap := captureKillJob(t, nil)
+			c := captureKillJob(t, nil)
 			s := &terminatingState{job: makeJobInfo(vcbatch.Terminating)}
 
 			if err := s.Execute(Action{Action: v1alpha1.SyncJobAction}); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			changed := cap.updateFn(&tc.status)
+			changed := c.updateFn(&tc.status)
 
 			if !changed {
 				t.Error("updateFn should return true when no alive pods remain")

@@ -24,7 +24,7 @@ import (
 	"volcano.sh/apis/pkg/apis/bus/v1alpha1"
 )
 
-// ── action-agnostic behaviour ────────────────────────────────────────────────
+// --- action-agnostic behaviour ---
 
 // TestCompletingState_Execute_ActionAgnostic verifies that Execute always
 // delegates to KillJob regardless of the action type received.
@@ -47,50 +47,50 @@ func TestCompletingState_Execute_ActionAgnostic(t *testing.T) {
 
 	for _, tc := range actions {
 		t.Run(tc.name, func(t *testing.T) {
-			cap := captureKillJob(t, nil)
+			c := captureKillJob(t, nil)
 			s := &completingState{job: makeJobInfo(vcbatch.Completing)}
 
 			if err := s.Execute(Action{Action: tc.action}); err != nil {
 				t.Fatalf("Execute(%q) returned unexpected error: %v", tc.action, err)
 			}
-			if cap.job == nil {
+			if c.job == nil {
 				t.Fatal("KillJob was not called")
 			}
 		})
 	}
 }
 
-// ── KillJob call arguments ───────────────────────────────────────────────────
+// --- KillJob call arguments ---
 
 // TestCompletingState_Execute_UsesSoftRetainPhase verifies that Execute passes
 // PodRetainPhaseSoft so Succeeded/Failed pods are preserved during draining.
 func TestCompletingState_Execute_UsesSoftRetainPhase(t *testing.T) {
-	cap := captureKillJob(t, nil)
+	c := captureKillJob(t, nil)
 	s := &completingState{job: makeJobInfo(vcbatch.Completing)}
 
 	if err := s.Execute(Action{Action: v1alpha1.SyncJobAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	for phase := range PodRetainPhaseSoft {
-		if _, ok := cap.podRetainPhase[phase]; !ok {
+		if _, ok := c.podRetainPhase[phase]; !ok {
 			t.Errorf("podRetainPhase missing %q", phase)
 		}
 	}
-	if len(cap.podRetainPhase) != len(PodRetainPhaseSoft) {
-		t.Errorf("podRetainPhase has %d entries, want %d", len(cap.podRetainPhase), len(PodRetainPhaseSoft))
+	if len(c.podRetainPhase) != len(PodRetainPhaseSoft) {
+		t.Errorf("podRetainPhase has %d entries, want %d", len(c.podRetainPhase), len(PodRetainPhaseSoft))
 	}
 }
 
 // TestCompletingState_Execute_NonNilUpdateFn verifies the updateFn is not nil
 // — completingState drives a phase transition, unlike finishedState.
 func TestCompletingState_Execute_NonNilUpdateFn(t *testing.T) {
-	cap := captureKillJob(t, nil)
+	c := captureKillJob(t, nil)
 	s := &completingState{job: makeJobInfo(vcbatch.Completing)}
 
 	if err := s.Execute(Action{Action: v1alpha1.SyncJobAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cap.updateFn == nil {
+	if c.updateFn == nil {
 		t.Error("updateFn must not be nil for completingState")
 	}
 }
@@ -98,15 +98,15 @@ func TestCompletingState_Execute_NonNilUpdateFn(t *testing.T) {
 // TestCompletingState_Execute_PassesJobInfo verifies the correct JobInfo
 // pointer is forwarded to KillJob.
 func TestCompletingState_Execute_PassesJobInfo(t *testing.T) {
-	cap := captureKillJob(t, nil)
+	c := captureKillJob(t, nil)
 	info := makeJobInfo(vcbatch.Completing)
 	s := &completingState{job: info}
 
 	if err := s.Execute(Action{Action: v1alpha1.SyncJobAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cap.job != info {
-		t.Errorf("KillJob received wrong JobInfo: got %p, want %p", cap.job, info)
+	if c.job != info {
+		t.Errorf("KillJob received wrong JobInfo: got %p, want %p", c.job, info)
 	}
 }
 
@@ -122,7 +122,7 @@ func TestCompletingState_Execute_PropagatesError(t *testing.T) {
 	}
 }
 
-// ── updateFn: alive pods present → stay Completing ───────────────────────────
+// --- updateFn: alive pods present -> stay Completing ---
 
 // TestCompletingState_Execute_UpdateFnAlivePods verifies that the updateFn
 // returns false and leaves the phase unchanged whenever any "alive" pod counter
@@ -160,7 +160,7 @@ func TestCompletingState_Execute_UpdateFnAlivePods(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cap := captureKillJob(t, nil)
+			c := captureKillJob(t, nil)
 			s := &completingState{job: makeJobInfo(vcbatch.Completing)}
 
 			if err := s.Execute(Action{Action: v1alpha1.SyncJobAction}); err != nil {
@@ -168,7 +168,7 @@ func TestCompletingState_Execute_UpdateFnAlivePods(t *testing.T) {
 			}
 
 			originalPhase := tc.status.State.Phase
-			changed := cap.updateFn(&tc.status)
+			changed := c.updateFn(&tc.status)
 
 			if changed {
 				t.Error("updateFn should return false while alive pods exist")
@@ -180,7 +180,7 @@ func TestCompletingState_Execute_UpdateFnAlivePods(t *testing.T) {
 	}
 }
 
-// ── updateFn: all alive pods drained → Completed ─────────────────────────────
+// --- updateFn: all alive pods drained -> Completed ---
 
 // TestCompletingState_Execute_UpdateFnAllPodsGone verifies that the updateFn
 // returns true and transitions the phase to Completed when all alive pod
@@ -209,14 +209,14 @@ func TestCompletingState_Execute_UpdateFnAllPodsGone(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cap := captureKillJob(t, nil)
+			c := captureKillJob(t, nil)
 			s := &completingState{job: makeJobInfo(vcbatch.Completing)}
 
 			if err := s.Execute(Action{Action: v1alpha1.SyncJobAction}); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			changed := cap.updateFn(&tc.status)
+			changed := c.updateFn(&tc.status)
 
 			if !changed {
 				t.Error("updateFn should return true when no alive pods remain")

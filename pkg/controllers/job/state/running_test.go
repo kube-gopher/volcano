@@ -22,6 +22,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	vcbatch "volcano.sh/apis/pkg/apis/batch/v1alpha1"
 	"volcano.sh/apis/pkg/apis/bus/v1alpha1"
 
@@ -53,31 +54,29 @@ func taskStatus(succeeded int32) vcbatch.TaskState {
 	}
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// RestartJobAction branch
-// ══════════════════════════════════════════════════════════════════════════════
+// --- RestartJobAction branch ---
 
 func TestRunningState_Execute_RestartJobCallsKillJob(t *testing.T) {
-	cap := captureKillJob(t, nil)
+	c := captureKillJob(t, nil)
 	s := &runningState{job: makeJobInfo(vcbatch.Running)}
 
 	if err := s.Execute(Action{Action: v1alpha1.RestartJobAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cap.job == nil {
+	if c.job == nil {
 		t.Fatal("KillJob was not called")
 	}
 }
 
 func TestRunningState_Execute_RestartJobUsesRetainPhaseNone(t *testing.T) {
-	cap := captureKillJob(t, nil)
+	c := captureKillJob(t, nil)
 	s := &runningState{job: makeJobInfo(vcbatch.Running)}
 
 	if err := s.Execute(Action{Action: v1alpha1.RestartJobAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(cap.podRetainPhase) != 0 {
-		t.Errorf("podRetainPhase should be empty (PhaseNone), got %v", cap.podRetainPhase)
+	if len(c.podRetainPhase) != 0 {
+		t.Errorf("podRetainPhase should be empty (PhaseNone), got %v", c.podRetainPhase)
 	}
 }
 
@@ -92,13 +91,13 @@ func TestRunningState_Execute_RestartJobUpdateFn(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cap := captureKillJob(t, nil)
+			c := captureKillJob(t, nil)
 			s := &runningState{job: makeJobInfo(vcbatch.Running)}
 
 			if err := s.Execute(Action{Action: v1alpha1.RestartJobAction}); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if cap.updateFn == nil {
+			if c.updateFn == nil {
 				t.Fatal("expected non-nil updateFn")
 			}
 
@@ -106,7 +105,7 @@ func TestRunningState_Execute_RestartJobUpdateFn(t *testing.T) {
 				RetryCount: tc.initialRetry,
 				State:      vcbatch.JobState{Phase: vcbatch.Running},
 			}
-			changed := cap.updateFn(status)
+			changed := c.updateFn(status)
 
 			if !changed {
 				t.Error("updateFn should return true")
@@ -131,9 +130,7 @@ func TestRunningState_Execute_RestartJobPropagatesError(t *testing.T) {
 	}
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// RestartTask / RestartPod / RestartPartition branch
-// ══════════════════════════════════════════════════════════════════════════════
+// --- RestartTask / RestartPod / RestartPartition branch ---
 
 func TestRunningState_Execute_RestartTargetActionsCallKillTarget(t *testing.T) {
 	actions := []struct {
@@ -146,13 +143,13 @@ func TestRunningState_Execute_RestartTargetActionsCallKillTarget(t *testing.T) {
 	}
 	for _, tc := range actions {
 		t.Run(tc.name, func(t *testing.T) {
-			cap := captureKillTarget(t, nil)
+			c := captureKillTarget(t, nil)
 			s := &runningState{job: makeJobInfo(vcbatch.Running)}
 
 			if err := s.Execute(Action{Action: tc.action}); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if cap.job == nil {
+			if c.job == nil {
 				t.Fatal("KillTarget was not called")
 			}
 		})
@@ -183,32 +180,32 @@ func TestRunningState_Execute_RestartTargetForwardsTarget(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cap := captureKillTarget(t, nil)
+			c := captureKillTarget(t, nil)
 			s := &runningState{job: makeJobInfo(vcbatch.Running)}
 
 			if err := s.Execute(Action{Action: tc.action, Target: tc.target}); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if cap.target != tc.target {
-				t.Errorf("KillTarget received target %+v, want %+v", cap.target, tc.target)
+			if c.target != tc.target {
+				t.Errorf("KillTarget received target %+v, want %+v", c.target, tc.target)
 			}
 		})
 	}
 }
 
 func TestRunningState_Execute_RestartTargetUpdateFn(t *testing.T) {
-	cap := captureKillTarget(t, nil)
+	c := captureKillTarget(t, nil)
 	s := &runningState{job: makeJobInfo(vcbatch.Running)}
 
 	if err := s.Execute(Action{Action: v1alpha1.RestartTaskAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cap.updateFn == nil {
+	if c.updateFn == nil {
 		t.Fatal("expected non-nil updateFn")
 	}
 
 	status := &vcbatch.JobStatus{RetryCount: 1, State: vcbatch.JobState{Phase: vcbatch.Running}}
-	changed := cap.updateFn(status)
+	changed := c.updateFn(status)
 
 	if !changed {
 		t.Error("updateFn should return true")
@@ -231,9 +228,7 @@ func TestRunningState_Execute_RestartTargetPropagatesError(t *testing.T) {
 	}
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// AbortJobAction / TerminateJobAction / CompleteJobAction branches
-// ══════════════════════════════════════════════════════════════════════════════
+// --- AbortJobAction / TerminateJobAction / CompleteJobAction branches ---
 
 func TestRunningState_Execute_KillJobBranchesUsesSoftRetainPhase(t *testing.T) {
 	for _, action := range []v1alpha1.Action{
@@ -242,19 +237,19 @@ func TestRunningState_Execute_KillJobBranchesUsesSoftRetainPhase(t *testing.T) {
 		v1alpha1.CompleteJobAction,
 	} {
 		t.Run(string(action), func(t *testing.T) {
-			cap := captureKillJob(t, nil)
+			c := captureKillJob(t, nil)
 			s := &runningState{job: makeJobInfo(vcbatch.Running)}
 
 			if err := s.Execute(Action{Action: action}); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			for phase := range PodRetainPhaseSoft {
-				if _, ok := cap.podRetainPhase[phase]; !ok {
+				if _, ok := c.podRetainPhase[phase]; !ok {
 					t.Errorf("podRetainPhase missing %q", phase)
 				}
 			}
-			if len(cap.podRetainPhase) != len(PodRetainPhaseSoft) {
-				t.Errorf("podRetainPhase has %d entries, want %d", len(cap.podRetainPhase), len(PodRetainPhaseSoft))
+			if len(c.podRetainPhase) != len(PodRetainPhaseSoft) {
+				t.Errorf("podRetainPhase has %d entries, want %d", len(c.podRetainPhase), len(PodRetainPhaseSoft))
 			}
 		})
 	}
@@ -271,18 +266,18 @@ func TestRunningState_Execute_KillJobBranchesUpdateFn(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(string(tc.action), func(t *testing.T) {
-			cap := captureKillJob(t, nil)
+			c := captureKillJob(t, nil)
 			s := &runningState{job: makeJobInfo(vcbatch.Running)}
 
 			if err := s.Execute(Action{Action: tc.action}); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if cap.updateFn == nil {
+			if c.updateFn == nil {
 				t.Fatal("expected non-nil updateFn")
 			}
 
 			status := &vcbatch.JobStatus{State: vcbatch.JobState{Phase: vcbatch.Running}}
-			changed := cap.updateFn(status)
+			changed := c.updateFn(status)
 
 			if !changed {
 				t.Error("updateFn should return true")
@@ -312,18 +307,16 @@ func TestRunningState_Execute_KillJobBranchesPropagatesError(t *testing.T) {
 	}
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// default branch (SyncJob) — updateFn logic
-// ══════════════════════════════════════════════════════════════════════════════
+// --- default branch (SyncJob): updateFn logic ---
 
 func TestRunningState_Execute_DefaultCallsSyncJob(t *testing.T) {
-	cap := captureSyncJob(t, nil)
+	c := captureSyncJob(t, nil)
 	s := &runningState{job: makeJobInfo(vcbatch.Running)}
 
 	if err := s.Execute(Action{Action: v1alpha1.SyncJobAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cap.job == nil {
+	if c.job == nil {
 		t.Fatal("SyncJob was not called")
 	}
 }
@@ -342,7 +335,7 @@ func TestRunningState_Execute_DefaultPropagatesError(t *testing.T) {
 // total replicas is zero (scale-to-zero) the updateFn returns false and leaves
 // the phase unchanged.
 func TestRunningState_Execute_DefaultUpdateFnScaleToZero(t *testing.T) {
-	cap := captureSyncJob(t, nil)
+	c := captureSyncJob(t, nil)
 	s := &runningState{job: makeRunningJobInfo(0, nil, []vcbatch.TaskSpec{{Replicas: 0}})}
 
 	if err := s.Execute(Action{Action: v1alpha1.SyncJobAction}); err != nil {
@@ -350,7 +343,7 @@ func TestRunningState_Execute_DefaultUpdateFnScaleToZero(t *testing.T) {
 	}
 
 	status := &vcbatch.JobStatus{State: vcbatch.JobState{Phase: vcbatch.Running}}
-	changed := cap.updateFn(status)
+	changed := c.updateFn(status)
 
 	if changed {
 		t.Error("updateFn should return false for scale-to-zero")
@@ -373,7 +366,7 @@ func TestRunningState_Execute_DefaultUpdateFnMinSuccessEarlyExit(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cap := captureSyncJob(t, nil)
+			c := captureSyncJob(t, nil)
 			s := &runningState{job: makeRunningJobInfo(1, int32Ptr(tc.minSuc),
 				[]vcbatch.TaskSpec{{Replicas: 5}})}
 
@@ -382,7 +375,7 @@ func TestRunningState_Execute_DefaultUpdateFnMinSuccessEarlyExit(t *testing.T) {
 			}
 
 			status := &vcbatch.JobStatus{Succeeded: tc.succeeded, Running: 2}
-			changed := cap.updateFn(status)
+			changed := c.updateFn(status)
 
 			if !changed {
 				t.Error("updateFn should return true")
@@ -400,7 +393,7 @@ func TestRunningState_Execute_DefaultUpdateFnMinSuccessEarlyExit(t *testing.T) {
 func TestRunningState_Execute_DefaultUpdateFnPerTaskCheckFails(t *testing.T) {
 	// MinAvailable(3) >= totalTaskMinAvailable(2) → per-task loop runs.
 	// Task "worker" needs 2 succeeded but only 1 succeeded → Failed.
-	cap := captureSyncJob(t, nil)
+	c := captureSyncJob(t, nil)
 	s := &runningState{job: makeRunningJobInfo(3, nil, []vcbatch.TaskSpec{
 		{Name: "worker", Replicas: 3, MinAvailable: int32Ptr(2)},
 	})}
@@ -416,7 +409,7 @@ func TestRunningState_Execute_DefaultUpdateFnPerTaskCheckFails(t *testing.T) {
 			"worker": taskStatus(1), // only 1 succeeded, need 2
 		},
 	}
-	changed := cap.updateFn(status)
+	changed := c.updateFn(status)
 
 	if !changed {
 		t.Error("updateFn should return true")
@@ -431,7 +424,7 @@ func TestRunningState_Execute_DefaultUpdateFnPerTaskCheckFails(t *testing.T) {
 func TestRunningState_Execute_DefaultUpdateFnPerTaskCheckSkipped(t *testing.T) {
 	// MinAvailable(1) < totalTaskMinAvailable(3) → loop skipped → use 3b.
 	// Succeeded(3) >= MinAvailable(1) → Completed.
-	cap := captureSyncJob(t, nil)
+	c := captureSyncJob(t, nil)
 	s := &runningState{job: makeRunningJobInfo(1, nil, []vcbatch.TaskSpec{
 		{Name: "worker", Replicas: 3, MinAvailable: int32Ptr(3)},
 	})}
@@ -447,7 +440,7 @@ func TestRunningState_Execute_DefaultUpdateFnPerTaskCheckSkipped(t *testing.T) {
 			"worker": taskStatus(3),
 		},
 	}
-	changed := cap.updateFn(status)
+	changed := c.updateFn(status)
 
 	if !changed {
 		t.Error("updateFn should return true")
@@ -464,7 +457,7 @@ func TestRunningState_Execute_DefaultUpdateFnPerTaskNoStatus(t *testing.T) {
 	// MinAvailable(2) >= totalTaskMinAvailable(2) → loop runs.
 	// "worker" has MinAvailable but has NO entry in TaskStatusCount → ok=false,
 	// loop continues without failing → falls through to 3b → Completed.
-	cap := captureSyncJob(t, nil)
+	c := captureSyncJob(t, nil)
 	s := &runningState{job: makeRunningJobInfo(2, nil, []vcbatch.TaskSpec{
 		{Name: "worker", Replicas: 2, MinAvailable: int32Ptr(2)},
 	})}
@@ -478,7 +471,7 @@ func TestRunningState_Execute_DefaultUpdateFnPerTaskNoStatus(t *testing.T) {
 		Failed:          0, // all terminal
 		TaskStatusCount: map[string]vcbatch.TaskState{},
 	}
-	changed := cap.updateFn(status)
+	changed := c.updateFn(status)
 
 	if !changed {
 		t.Error("updateFn should return true")
@@ -528,7 +521,7 @@ func TestRunningState_Execute_DefaultUpdateFnAllTerminalOutcomes(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cap := captureSyncJob(t, nil)
+			c := captureSyncJob(t, nil)
 			// No tasks with per-task MinAvailable so the loop is a no-op.
 			s := &runningState{job: makeRunningJobInfo(tc.minAvailable, tc.minSuccess,
 				[]vcbatch.TaskSpec{{Replicas: 3}})}
@@ -537,7 +530,7 @@ func TestRunningState_Execute_DefaultUpdateFnAllTerminalOutcomes(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			changed := cap.updateFn(&tc.status)
+			changed := c.updateFn(&tc.status)
 
 			if !changed {
 				t.Error("updateFn should return true when all pods are terminal")
@@ -575,7 +568,7 @@ func TestRunningState_Execute_DefaultUpdateFnTooManyPending(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cap := captureSyncJob(t, nil)
+			c := captureSyncJob(t, nil)
 			s := &runningState{job: makeRunningJobInfo(tc.minAvailable, nil,
 				[]vcbatch.TaskSpec{{Replicas: tc.taskReplicas}})}
 
@@ -584,7 +577,7 @@ func TestRunningState_Execute_DefaultUpdateFnTooManyPending(t *testing.T) {
 			}
 
 			status := &vcbatch.JobStatus{Pending: tc.pending}
-			changed := cap.updateFn(status)
+			changed := c.updateFn(status)
 
 			if !changed {
 				t.Error("updateFn should return true")
@@ -623,7 +616,7 @@ func TestRunningState_Execute_DefaultUpdateFnKeepsRunning(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cap := captureSyncJob(t, nil)
+			c := captureSyncJob(t, nil)
 			s := &runningState{job: makeRunningJobInfo(tc.minAvailable, nil,
 				[]vcbatch.TaskSpec{{Replicas: tc.taskReplicas}})}
 
@@ -632,7 +625,7 @@ func TestRunningState_Execute_DefaultUpdateFnKeepsRunning(t *testing.T) {
 			}
 
 			status := tc.status
-			changed := cap.updateFn(&status)
+			changed := c.updateFn(&status)
 
 			if changed {
 				t.Error("updateFn should return false when no terminal condition met")

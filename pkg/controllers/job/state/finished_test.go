@@ -21,35 +21,10 @@ import (
 	"testing"
 
 	v1 "k8s.io/api/core/v1"
+
 	vcbatch "volcano.sh/apis/pkg/apis/batch/v1alpha1"
 	"volcano.sh/apis/pkg/apis/bus/v1alpha1"
-
-	"volcano.sh/volcano/pkg/controllers/apis"
 )
-
-// killJobCall records one invocation of the KillJob stub.
-type killJobCall struct {
-	job            *apis.JobInfo
-	podRetainPhase PhaseMap
-	updateFnIsNil  bool
-}
-
-// stubKillJob replaces the KillJob package variable with a stub that records
-// its arguments and returns the given error. It restores the original value
-// via t.Cleanup so parallel tests are not affected.
-func stubKillJob(t *testing.T, returnErr error) *killJobCall {
-	t.Helper()
-	original := KillJob
-	call := &killJobCall{}
-	KillJob = func(job *apis.JobInfo, podRetainPhase PhaseMap, fn UpdateStatusFn) error {
-		call.job = job
-		call.podRetainPhase = podRetainPhase
-		call.updateFnIsNil = fn == nil
-		return returnErr
-	}
-	t.Cleanup(func() { KillJob = original })
-	return call
-}
 
 // TestFinishedState_Execute_ActionAgnostic verifies that Execute always
 // delegates to KillJob regardless of the action type.
@@ -72,14 +47,14 @@ func TestFinishedState_Execute_ActionAgnostic(t *testing.T) {
 
 	for _, tc := range actions {
 		t.Run(tc.name, func(t *testing.T) {
-			call := stubKillJob(t, nil)
+			c := captureKillJob(t, nil)
 			info := makeJobInfo(vcbatch.Completed)
 			s := &finishedState{job: info}
 
 			if err := s.Execute(Action{Action: tc.action}); err != nil {
 				t.Fatalf("Execute(%q) returned unexpected error: %v", tc.action, err)
 			}
-			if call.job == nil {
+			if c.job == nil {
 				t.Fatal("KillJob was not called")
 			}
 		})
@@ -90,7 +65,7 @@ func TestFinishedState_Execute_ActionAgnostic(t *testing.T) {
 // PodRetainPhaseSoft (Succeeded + Failed retained) rather than
 // PodRetainPhaseNone (all pods killed).
 func TestFinishedState_Execute_UsesSoftRetainPhase(t *testing.T) {
-	call := stubKillJob(t, nil)
+	c := captureKillJob(t, nil)
 	s := &finishedState{job: makeJobInfo(vcbatch.Completed)}
 
 	if err := s.Execute(Action{Action: v1alpha1.SyncJobAction}); err != nil {
@@ -98,25 +73,25 @@ func TestFinishedState_Execute_UsesSoftRetainPhase(t *testing.T) {
 	}
 
 	for _, phase := range []v1.PodPhase{v1.PodSucceeded, v1.PodFailed} {
-		if _, ok := call.podRetainPhase[phase]; !ok {
-			t.Errorf("podRetainPhase missing %q; got %v", phase, call.podRetainPhase)
+		if _, ok := c.podRetainPhase[phase]; !ok {
+			t.Errorf("podRetainPhase missing %q; got %v", phase, c.podRetainPhase)
 		}
 	}
-	if len(call.podRetainPhase) != 2 {
-		t.Errorf("podRetainPhase should have exactly 2 entries, got %d", len(call.podRetainPhase))
+	if len(c.podRetainPhase) != 2 {
+		t.Errorf("podRetainPhase should have exactly 2 entries, got %d", len(c.podRetainPhase))
 	}
 }
 
 // TestFinishedState_Execute_NilUpdateFn verifies that Execute passes a nil
-// update function — the finished state must not change job phase.
+// update function: the finished state must not change job phase.
 func TestFinishedState_Execute_NilUpdateFn(t *testing.T) {
-	call := stubKillJob(t, nil)
+	c := captureKillJob(t, nil)
 	s := &finishedState{job: makeJobInfo(vcbatch.Completed)}
 
 	if err := s.Execute(Action{Action: v1alpha1.SyncJobAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !call.updateFnIsNil {
+	if c.updateFn != nil {
 		t.Error("KillJob updateFn should be nil for finishedState")
 	}
 }
@@ -124,15 +99,15 @@ func TestFinishedState_Execute_NilUpdateFn(t *testing.T) {
 // TestFinishedState_Execute_PassesJobInfo verifies that Execute forwards the
 // correct JobInfo pointer to KillJob.
 func TestFinishedState_Execute_PassesJobInfo(t *testing.T) {
-	call := stubKillJob(t, nil)
+	c := captureKillJob(t, nil)
 	info := makeJobInfo(vcbatch.Terminated)
 	s := &finishedState{job: info}
 
 	if err := s.Execute(Action{Action: v1alpha1.SyncJobAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if call.job != info {
-		t.Errorf("KillJob received wrong JobInfo: got %p, want %p", call.job, info)
+	if c.job != info {
+		t.Errorf("KillJob received wrong JobInfo: got %p, want %p", c.job, info)
 	}
 }
 
@@ -140,7 +115,7 @@ func TestFinishedState_Execute_PassesJobInfo(t *testing.T) {
 // by KillJob is surfaced to the caller unchanged.
 func TestFinishedState_Execute_PropagatesError(t *testing.T) {
 	want := errors.New("kill failed")
-	stubKillJob(t, want)
+	captureKillJob(t, want)
 	s := &finishedState{job: makeJobInfo(vcbatch.Failed)}
 
 	if got := s.Execute(Action{Action: v1alpha1.SyncJobAction}); !errors.Is(got, want) {

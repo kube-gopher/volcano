@@ -21,13 +21,14 @@ import (
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	vcbatch "volcano.sh/apis/pkg/apis/batch/v1alpha1"
 	"volcano.sh/apis/pkg/apis/bus/v1alpha1"
 
 	"volcano.sh/volcano/pkg/controllers/apis"
 )
 
-// ── stub helpers ────────────────────────────────────────────────────────────
+// --- stub helpers ---
 
 // capturedKillTarget records one KillTarget invocation and preserves the
 // updateFn so tests can invoke it to verify state-transition logic.
@@ -40,15 +41,15 @@ type capturedKillTarget struct {
 func captureKillTarget(t *testing.T, returnErr error) *capturedKillTarget {
 	t.Helper()
 	original := KillTarget
-	cap := &capturedKillTarget{}
+	c := &capturedKillTarget{}
 	KillTarget = func(job *apis.JobInfo, target Target, fn UpdateStatusFn) error {
-		cap.job = job
-		cap.target = target
-		cap.updateFn = fn
+		c.job = job
+		c.target = target
+		c.updateFn = fn
 		return returnErr
 	}
 	t.Cleanup(func() { KillTarget = original })
-	return cap
+	return c
 }
 
 // capturedSyncJob records one SyncJob invocation and preserves the updateFn.
@@ -60,14 +61,14 @@ type capturedSyncJob struct {
 func captureSyncJob(t *testing.T, returnErr error) *capturedSyncJob {
 	t.Helper()
 	original := SyncJob
-	cap := &capturedSyncJob{}
+	c := &capturedSyncJob{}
 	SyncJob = func(job *apis.JobInfo, fn UpdateStatusFn) error {
-		cap.job = job
-		cap.updateFn = fn
+		c.job = job
+		c.updateFn = fn
 		return returnErr
 	}
 	t.Cleanup(func() { SyncJob = original })
-	return cap
+	return c
 }
 
 // makeJobInfoWithSpec builds a JobInfo with the given phase and MinAvailable.
@@ -81,18 +82,18 @@ func makeJobInfoWithSpec(phase vcbatch.JobPhase, minAvailable int32) *apis.JobIn
 	}
 }
 
-// ── RestartJobAction branch ──────────────────────────────────────────────────
+// --- RestartJobAction branch ---
 
 // TestPendingState_Execute_RestartJobCallsKillJob verifies RestartJobAction
 // delegates to KillJob (not SyncJob or KillTarget).
 func TestPendingState_Execute_RestartJobCallsKillJob(t *testing.T) {
-	cap := captureKillJob(t, nil)
+	c := captureKillJob(t, nil)
 	s := &pendingState{job: makeJobInfo(vcbatch.Pending)}
 
 	if err := s.Execute(Action{Action: v1alpha1.RestartJobAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cap.job == nil {
+	if c.job == nil {
 		t.Fatal("KillJob was not called")
 	}
 }
@@ -101,14 +102,14 @@ func TestPendingState_Execute_RestartJobCallsKillJob(t *testing.T) {
 // RestartJobAction passes PodRetainPhaseNone — all pods are killed, including
 // already-completed ones (unlike Abort/Complete/Terminate which use Soft).
 func TestPendingState_Execute_RestartJobUsesRetainPhaseNone(t *testing.T) {
-	cap := captureKillJob(t, nil)
+	c := captureKillJob(t, nil)
 	s := &pendingState{job: makeJobInfo(vcbatch.Pending)}
 
 	if err := s.Execute(Action{Action: v1alpha1.RestartJobAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(cap.podRetainPhase) != 0 {
-		t.Errorf("podRetainPhase should be empty (PhaseNone), got %v", cap.podRetainPhase)
+	if len(c.podRetainPhase) != 0 {
+		t.Errorf("podRetainPhase should be empty (PhaseNone), got %v", c.podRetainPhase)
 	}
 }
 
@@ -125,13 +126,13 @@ func TestPendingState_Execute_RestartJobUpdateFn(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cap := captureKillJob(t, nil)
+			c := captureKillJob(t, nil)
 			s := &pendingState{job: makeJobInfo(vcbatch.Pending)}
 
 			if err := s.Execute(Action{Action: v1alpha1.RestartJobAction}); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if cap.updateFn == nil {
+			if c.updateFn == nil {
 				t.Fatal("expected non-nil updateFn")
 			}
 
@@ -139,7 +140,7 @@ func TestPendingState_Execute_RestartJobUpdateFn(t *testing.T) {
 				RetryCount: tc.initialRetry,
 				State:      vcbatch.JobState{Phase: vcbatch.Pending},
 			}
-			changed := cap.updateFn(status)
+			changed := c.updateFn(status)
 
 			if !changed {
 				t.Error("updateFn should return true")
@@ -157,15 +158,15 @@ func TestPendingState_Execute_RestartJobUpdateFn(t *testing.T) {
 // TestPendingState_Execute_RestartJobPassesJobInfo verifies the correct
 // JobInfo pointer is forwarded to KillJob.
 func TestPendingState_Execute_RestartJobPassesJobInfo(t *testing.T) {
-	cap := captureKillJob(t, nil)
+	c := captureKillJob(t, nil)
 	info := makeJobInfo(vcbatch.Pending)
 	s := &pendingState{job: info}
 
 	if err := s.Execute(Action{Action: v1alpha1.RestartJobAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cap.job != info {
-		t.Errorf("KillJob received wrong JobInfo: got %p, want %p", cap.job, info)
+	if c.job != info {
+		t.Errorf("KillJob received wrong JobInfo: got %p, want %p", c.job, info)
 	}
 }
 
@@ -181,7 +182,7 @@ func TestPendingState_Execute_RestartJobPropagatesError(t *testing.T) {
 	}
 }
 
-// ── RestartTask / RestartPod / RestartPartition branch ───────────────────────
+// --- RestartTask / RestartPod / RestartPartition branch ---
 
 // TestPendingState_Execute_RestartTargetActionsCallKillTarget verifies that
 // all three granular restart actions delegate to KillTarget.
@@ -196,13 +197,13 @@ func TestPendingState_Execute_RestartTargetActionsCallKillTarget(t *testing.T) {
 	}
 	for _, tc := range actions {
 		t.Run(tc.name, func(t *testing.T) {
-			cap := captureKillTarget(t, nil)
+			c := captureKillTarget(t, nil)
 			s := &pendingState{job: makeJobInfo(vcbatch.Pending)}
 
 			if err := s.Execute(Action{Action: tc.action}); err != nil {
 				t.Fatalf("Execute(%q) returned unexpected error: %v", tc.action, err)
 			}
-			if cap.job == nil {
+			if c.job == nil {
 				t.Fatal("KillTarget was not called")
 			}
 		})
@@ -235,14 +236,14 @@ func TestPendingState_Execute_RestartTargetForwardsTarget(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cap := captureKillTarget(t, nil)
+			c := captureKillTarget(t, nil)
 			s := &pendingState{job: makeJobInfo(vcbatch.Pending)}
 
 			if err := s.Execute(Action{Action: tc.action, Target: tc.target}); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if cap.target != tc.target {
-				t.Errorf("KillTarget received target %+v, want %+v", cap.target, tc.target)
+			if c.target != tc.target {
+				t.Errorf("KillTarget received target %+v, want %+v", c.target, tc.target)
 			}
 		})
 	}
@@ -251,18 +252,18 @@ func TestPendingState_Execute_RestartTargetForwardsTarget(t *testing.T) {
 // TestPendingState_Execute_RestartTargetUpdateFn verifies the updateFn sets
 // Phase to Restarting, increments RetryCount, and returns true.
 func TestPendingState_Execute_RestartTargetUpdateFn(t *testing.T) {
-	cap := captureKillTarget(t, nil)
+	c := captureKillTarget(t, nil)
 	s := &pendingState{job: makeJobInfo(vcbatch.Pending)}
 
 	if err := s.Execute(Action{Action: v1alpha1.RestartTaskAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cap.updateFn == nil {
+	if c.updateFn == nil {
 		t.Fatal("expected non-nil updateFn")
 	}
 
 	status := &vcbatch.JobStatus{RetryCount: 1, State: vcbatch.JobState{Phase: vcbatch.Pending}}
-	changed := cap.updateFn(status)
+	changed := c.updateFn(status)
 
 	if !changed {
 		t.Error("updateFn should return true")
@@ -287,7 +288,7 @@ func TestPendingState_Execute_RestartTargetPropagatesError(t *testing.T) {
 	}
 }
 
-// ── AbortJobAction / CompleteJobAction / TerminateJobAction branches ─────────
+// --- AbortJobAction / CompleteJobAction / TerminateJobAction branches ---
 
 // TestPendingState_Execute_KillJobBranchesUsesSoftRetainPhase verifies that
 // Abort, Complete, and Terminate all call KillJob with PodRetainPhaseSoft.
@@ -299,19 +300,19 @@ func TestPendingState_Execute_KillJobBranchesUsesSoftRetainPhase(t *testing.T) {
 	}
 	for _, action := range actions {
 		t.Run(string(action), func(t *testing.T) {
-			cap := captureKillJob(t, nil)
+			c := captureKillJob(t, nil)
 			s := &pendingState{job: makeJobInfo(vcbatch.Pending)}
 
 			if err := s.Execute(Action{Action: action}); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			for phase := range PodRetainPhaseSoft {
-				if _, ok := cap.podRetainPhase[phase]; !ok {
+				if _, ok := c.podRetainPhase[phase]; !ok {
 					t.Errorf("podRetainPhase missing %q", phase)
 				}
 			}
-			if len(cap.podRetainPhase) != len(PodRetainPhaseSoft) {
-				t.Errorf("podRetainPhase has %d entries, want %d", len(cap.podRetainPhase), len(PodRetainPhaseSoft))
+			if len(c.podRetainPhase) != len(PodRetainPhaseSoft) {
+				t.Errorf("podRetainPhase has %d entries, want %d", len(c.podRetainPhase), len(PodRetainPhaseSoft))
 			}
 		})
 	}
@@ -330,18 +331,18 @@ func TestPendingState_Execute_KillJobBranchesUpdateFn(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(string(tc.action), func(t *testing.T) {
-			cap := captureKillJob(t, nil)
+			c := captureKillJob(t, nil)
 			s := &pendingState{job: makeJobInfo(vcbatch.Pending)}
 
 			if err := s.Execute(Action{Action: tc.action}); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if cap.updateFn == nil {
+			if c.updateFn == nil {
 				t.Fatal("expected non-nil updateFn")
 			}
 
 			status := &vcbatch.JobStatus{State: vcbatch.JobState{Phase: vcbatch.Pending}}
-			changed := cap.updateFn(status)
+			changed := c.updateFn(status)
 
 			if !changed {
 				t.Error("updateFn should return true")
@@ -374,18 +375,18 @@ func TestPendingState_Execute_KillJobBranchesPropagatesError(t *testing.T) {
 	}
 }
 
-// ── default branch (SyncJob) ─────────────────────────────────────────────────
+// --- default branch (SyncJob) ---
 
 // TestPendingState_Execute_DefaultCallsSyncJob verifies the default path
 // calls SyncJob (not KillJob or KillTarget).
 func TestPendingState_Execute_DefaultCallsSyncJob(t *testing.T) {
-	cap := captureSyncJob(t, nil)
+	c := captureSyncJob(t, nil)
 	s := &pendingState{job: makeJobInfo(vcbatch.Pending)}
 
 	if err := s.Execute(Action{Action: v1alpha1.SyncJobAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cap.job == nil {
+	if c.job == nil {
 		t.Fatal("SyncJob was not called")
 	}
 }
@@ -393,15 +394,15 @@ func TestPendingState_Execute_DefaultCallsSyncJob(t *testing.T) {
 // TestPendingState_Execute_DefaultPassesJobInfo verifies the correct JobInfo
 // pointer is forwarded to SyncJob.
 func TestPendingState_Execute_DefaultPassesJobInfo(t *testing.T) {
-	cap := captureSyncJob(t, nil)
+	c := captureSyncJob(t, nil)
 	info := makeJobInfoWithSpec(vcbatch.Pending, 1)
 	s := &pendingState{job: info}
 
 	if err := s.Execute(Action{Action: v1alpha1.SyncJobAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cap.job != info {
-		t.Errorf("SyncJob received wrong JobInfo: got %p, want %p", cap.job, info)
+	if c.job != info {
+		t.Errorf("SyncJob received wrong JobInfo: got %p, want %p", c.job, info)
 	}
 }
 
@@ -441,17 +442,17 @@ func TestPendingState_Execute_DefaultUpdateFnTransitionsToRunning(t *testing.T) 
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cap := captureSyncJob(t, nil)
+			c := captureSyncJob(t, nil)
 			s := &pendingState{job: makeJobInfoWithSpec(vcbatch.Pending, tc.minAvailable)}
 
 			if err := s.Execute(Action{Action: v1alpha1.SyncJobAction}); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if cap.updateFn == nil {
+			if c.updateFn == nil {
 				t.Fatal("expected non-nil updateFn")
 			}
 
-			changed := cap.updateFn(&tc.status)
+			changed := c.updateFn(&tc.status)
 
 			if !changed {
 				t.Error("updateFn should return true when MinAvailable is met")
@@ -490,18 +491,18 @@ func TestPendingState_Execute_DefaultUpdateFnStaysPending(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cap := captureSyncJob(t, nil)
+			c := captureSyncJob(t, nil)
 			s := &pendingState{job: makeJobInfoWithSpec(vcbatch.Pending, tc.minAvailable)}
 
 			if err := s.Execute(Action{Action: v1alpha1.SyncJobAction}); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if cap.updateFn == nil {
+			if c.updateFn == nil {
 				t.Fatal("expected non-nil updateFn")
 			}
 
 			originalPhase := tc.status.State.Phase
-			changed := cap.updateFn(&tc.status)
+			changed := c.updateFn(&tc.status)
 
 			if changed {
 				t.Error("updateFn should return false when MinAvailable is not met")

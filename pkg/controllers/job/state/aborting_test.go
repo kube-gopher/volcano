@@ -24,20 +24,18 @@ import (
 	"volcano.sh/apis/pkg/apis/bus/v1alpha1"
 )
 
-// ═══════════════════════════════════════════════════════════
-// ResumeJobAction branch
-// ═══════════════════════════════════════════════════════════
+// --- ResumeJobAction branch ---
 
 // TestAbortingState_Execute_ResumeCallsKillJob verifies that ResumeJobAction
 // delegates to KillJob.
 func TestAbortingState_Execute_ResumeCallsKillJob(t *testing.T) {
-	cap := captureKillJob(t, nil)
+	c := captureKillJob(t, nil)
 	s := &abortingState{job: makeJobInfo(vcbatch.Aborting)}
 
 	if err := s.Execute(Action{Action: v1alpha1.ResumeJobAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cap.job == nil {
+	if c.job == nil {
 		t.Fatal("KillJob was not called")
 	}
 }
@@ -45,37 +43,37 @@ func TestAbortingState_Execute_ResumeCallsKillJob(t *testing.T) {
 // TestAbortingState_Execute_ResumeUsesSoftRetainPhase verifies that
 // ResumeJobAction passes PodRetainPhaseSoft to KillJob.
 func TestAbortingState_Execute_ResumeUsesSoftRetainPhase(t *testing.T) {
-	cap := captureKillJob(t, nil)
+	c := captureKillJob(t, nil)
 	s := &abortingState{job: makeJobInfo(vcbatch.Aborting)}
 
 	if err := s.Execute(Action{Action: v1alpha1.ResumeJobAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	for phase := range PodRetainPhaseSoft {
-		if _, ok := cap.podRetainPhase[phase]; !ok {
+		if _, ok := c.podRetainPhase[phase]; !ok {
 			t.Errorf("podRetainPhase missing %q", phase)
 		}
 	}
-	if len(cap.podRetainPhase) != len(PodRetainPhaseSoft) {
-		t.Errorf("podRetainPhase has %d entries, want %d", len(cap.podRetainPhase), len(PodRetainPhaseSoft))
+	if len(c.podRetainPhase) != len(PodRetainPhaseSoft) {
+		t.Errorf("podRetainPhase has %d entries, want %d", len(c.podRetainPhase), len(PodRetainPhaseSoft))
 	}
 }
 
 // TestAbortingState_Execute_ResumeUpdateFnSetsRestarting verifies the
 // updateFn transitions the phase to Restarting and returns true.
 func TestAbortingState_Execute_ResumeUpdateFnSetsRestarting(t *testing.T) {
-	cap := captureKillJob(t, nil)
+	c := captureKillJob(t, nil)
 	s := &abortingState{job: makeJobInfo(vcbatch.Aborting)}
 
 	if err := s.Execute(Action{Action: v1alpha1.ResumeJobAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cap.updateFn == nil {
+	if c.updateFn == nil {
 		t.Fatal("expected non-nil updateFn for ResumeJobAction")
 	}
 
 	status := &vcbatch.JobStatus{State: vcbatch.JobState{Phase: vcbatch.Aborting}}
-	changed := cap.updateFn(status)
+	changed := c.updateFn(status)
 
 	if !changed {
 		t.Error("updateFn should return true")
@@ -98,18 +96,18 @@ func TestAbortingState_Execute_ResumeUpdateFnIncrementsRetryCount(t *testing.T) 
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cap := captureKillJob(t, nil)
+			c := captureKillJob(t, nil)
 			s := &abortingState{job: makeJobInfo(vcbatch.Aborting)}
 
 			if err := s.Execute(Action{Action: v1alpha1.ResumeJobAction}); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if cap.updateFn == nil {
+			if c.updateFn == nil {
 				t.Fatal("expected non-nil updateFn")
 			}
 
 			status := &vcbatch.JobStatus{RetryCount: tc.initialRetry}
-			cap.updateFn(status)
+			c.updateFn(status)
 
 			if status.RetryCount != tc.wantRetry {
 				t.Errorf("RetryCount = %d, want %d", status.RetryCount, tc.wantRetry)
@@ -121,15 +119,15 @@ func TestAbortingState_Execute_ResumeUpdateFnIncrementsRetryCount(t *testing.T) 
 // TestAbortingState_Execute_ResumePassesJobInfo verifies the correct JobInfo
 // pointer is forwarded to KillJob for ResumeJobAction.
 func TestAbortingState_Execute_ResumePassesJobInfo(t *testing.T) {
-	cap := captureKillJob(t, nil)
+	c := captureKillJob(t, nil)
 	info := makeJobInfo(vcbatch.Aborting)
 	s := &abortingState{job: info}
 
 	if err := s.Execute(Action{Action: v1alpha1.ResumeJobAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cap.job != info {
-		t.Errorf("KillJob received wrong JobInfo: got %p, want %p", cap.job, info)
+	if c.job != info {
+		t.Errorf("KillJob received wrong JobInfo: got %p, want %p", c.job, info)
 	}
 }
 
@@ -145,9 +143,7 @@ func TestAbortingState_Execute_ResumePropagatesError(t *testing.T) {
 	}
 }
 
-// ═══════════════════════════════════════════════════════════
-// default branch (all non-Resume actions)
-// ═══════════════════════════════════════════════════════════
+// --- default branch (all non-Resume actions) ---
 
 // TestAbortingState_Execute_DefaultActionsCallKillJob verifies that every
 // non-Resume action delegates to KillJob.
@@ -169,13 +165,13 @@ func TestAbortingState_Execute_DefaultActionsCallKillJob(t *testing.T) {
 
 	for _, tc := range defaultActions {
 		t.Run(tc.name, func(t *testing.T) {
-			cap := captureKillJob(t, nil)
+			c := captureKillJob(t, nil)
 			s := &abortingState{job: makeJobInfo(vcbatch.Aborting)}
 
 			if err := s.Execute(Action{Action: tc.action}); err != nil {
 				t.Fatalf("Execute(%q) returned unexpected error: %v", tc.action, err)
 			}
-			if cap.job == nil {
+			if c.job == nil {
 				t.Fatal("KillJob was not called")
 			}
 		})
@@ -185,32 +181,32 @@ func TestAbortingState_Execute_DefaultActionsCallKillJob(t *testing.T) {
 // TestAbortingState_Execute_DefaultUsesSoftRetainPhase verifies the default
 // branch also passes PodRetainPhaseSoft to KillJob.
 func TestAbortingState_Execute_DefaultUsesSoftRetainPhase(t *testing.T) {
-	cap := captureKillJob(t, nil)
+	c := captureKillJob(t, nil)
 	s := &abortingState{job: makeJobInfo(vcbatch.Aborting)}
 
 	if err := s.Execute(Action{Action: v1alpha1.SyncJobAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	for phase := range PodRetainPhaseSoft {
-		if _, ok := cap.podRetainPhase[phase]; !ok {
+		if _, ok := c.podRetainPhase[phase]; !ok {
 			t.Errorf("podRetainPhase missing %q", phase)
 		}
 	}
-	if len(cap.podRetainPhase) != len(PodRetainPhaseSoft) {
-		t.Errorf("podRetainPhase has %d entries, want %d", len(cap.podRetainPhase), len(PodRetainPhaseSoft))
+	if len(c.podRetainPhase) != len(PodRetainPhaseSoft) {
+		t.Errorf("podRetainPhase has %d entries, want %d", len(c.podRetainPhase), len(PodRetainPhaseSoft))
 	}
 }
 
 // TestAbortingState_Execute_DefaultNonNilUpdateFn verifies the default branch
 // passes a non-nil updateFn (unlike abortedState which passes nil).
 func TestAbortingState_Execute_DefaultNonNilUpdateFn(t *testing.T) {
-	cap := captureKillJob(t, nil)
+	c := captureKillJob(t, nil)
 	s := &abortingState{job: makeJobInfo(vcbatch.Aborting)}
 
 	if err := s.Execute(Action{Action: v1alpha1.SyncJobAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cap.updateFn == nil {
+	if c.updateFn == nil {
 		t.Error("default branch updateFn must not be nil for abortingState")
 	}
 }
@@ -251,7 +247,7 @@ func TestAbortingState_Execute_DefaultUpdateFnAlivePods(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cap := captureKillJob(t, nil)
+			c := captureKillJob(t, nil)
 			s := &abortingState{job: makeJobInfo(vcbatch.Aborting)}
 
 			if err := s.Execute(Action{Action: v1alpha1.SyncJobAction}); err != nil {
@@ -259,7 +255,7 @@ func TestAbortingState_Execute_DefaultUpdateFnAlivePods(t *testing.T) {
 			}
 
 			originalPhase := tc.status.State.Phase
-			changed := cap.updateFn(&tc.status)
+			changed := c.updateFn(&tc.status)
 
 			if changed {
 				t.Error("updateFn should return false while alive pods exist")
@@ -297,14 +293,14 @@ func TestAbortingState_Execute_DefaultUpdateFnAllPodsGone(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cap := captureKillJob(t, nil)
+			c := captureKillJob(t, nil)
 			s := &abortingState{job: makeJobInfo(vcbatch.Aborting)}
 
 			if err := s.Execute(Action{Action: v1alpha1.SyncJobAction}); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			changed := cap.updateFn(&tc.status)
+			changed := c.updateFn(&tc.status)
 
 			if !changed {
 				t.Error("updateFn should return true when no alive pods remain")

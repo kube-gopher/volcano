@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	vcbatch "volcano.sh/apis/pkg/apis/batch/v1alpha1"
 	"volcano.sh/apis/pkg/apis/bus/v1alpha1"
 
@@ -49,9 +50,7 @@ func makeRestartingJobInfo(maxRetry int32, taskReplicas ...int32) *apis.JobInfo 
 	}
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// restartingUpdateStatus — direct method tests
-// ══════════════════════════════════════════════════════════════════════════════
+// --- restartingUpdateStatus: direct method tests ---
 
 // TestRestartingState_UpdateStatus_ExceedsMaxRetry verifies that when
 // RetryCount >= MaxRetry the method sets Phase to Failed and returns true.
@@ -216,20 +215,18 @@ func TestRestartingState_UpdateStatus_MaxRetryTakesPrecedence(t *testing.T) {
 	}
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// Execute — SyncJobAction branch
-// ══════════════════════════════════════════════════════════════════════════════
+// --- Execute: SyncJobAction branch ---
 
 // TestRestartingState_Execute_SyncJobCallsSyncJob verifies that SyncJobAction
 // delegates to SyncJob.
 func TestRestartingState_Execute_SyncJobCallsSyncJob(t *testing.T) {
-	cap := captureSyncJob(t, nil)
+	c := captureSyncJob(t, nil)
 	s := &restartingState{job: makeRestartingJobInfo(5, 3)}
 
 	if err := s.Execute(Action{Action: v1alpha1.SyncJobAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cap.job == nil {
+	if c.job == nil {
 		t.Fatal("SyncJob was not called")
 	}
 }
@@ -237,15 +234,15 @@ func TestRestartingState_Execute_SyncJobCallsSyncJob(t *testing.T) {
 // TestRestartingState_Execute_SyncJobPassesJobInfo verifies the correct
 // JobInfo pointer is forwarded to SyncJob.
 func TestRestartingState_Execute_SyncJobPassesJobInfo(t *testing.T) {
-	cap := captureSyncJob(t, nil)
+	c := captureSyncJob(t, nil)
 	info := makeRestartingJobInfo(5, 3)
 	s := &restartingState{job: info}
 
 	if err := s.Execute(Action{Action: v1alpha1.SyncJobAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cap.job != info {
-		t.Errorf("SyncJob received wrong JobInfo: got %p, want %p", cap.job, info)
+	if c.job != info {
+		t.Errorf("SyncJob received wrong JobInfo: got %p, want %p", c.job, info)
 	}
 }
 
@@ -253,19 +250,19 @@ func TestRestartingState_Execute_SyncJobPassesJobInfo(t *testing.T) {
 // that the updateFn passed to SyncJob is restartingUpdateStatus by calling it
 // and observing its output.
 func TestRestartingState_Execute_SyncJobUpdateFnIsRestartingUpdateStatus(t *testing.T) {
-	cap := captureSyncJob(t, nil)
+	c := captureSyncJob(t, nil)
 	// MaxRetry=2, RetryCount=2 → updateFn should set Failed
 	s := &restartingState{job: makeRestartingJobInfo(2, 3)}
 
 	if err := s.Execute(Action{Action: v1alpha1.SyncJobAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cap.updateFn == nil {
+	if c.updateFn == nil {
 		t.Fatal("expected non-nil updateFn")
 	}
 
 	status := &vcbatch.JobStatus{RetryCount: 2}
-	changed := cap.updateFn(status)
+	changed := c.updateFn(status)
 
 	if !changed {
 		t.Error("updateFn should return true")
@@ -287,9 +284,7 @@ func TestRestartingState_Execute_SyncJobPropagatesError(t *testing.T) {
 	}
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// Execute — RestartTask / RestartPod / RestartPartition branch
-// ══════════════════════════════════════════════════════════════════════════════
+// --- Execute: RestartTask / RestartPod / RestartPartition branch ---
 
 // TestRestartingState_Execute_RestartTargetActionsCallKillTarget verifies that
 // all three granular restart actions delegate to KillTarget.
@@ -304,13 +299,13 @@ func TestRestartingState_Execute_RestartTargetActionsCallKillTarget(t *testing.T
 	}
 	for _, tc := range actions {
 		t.Run(tc.name, func(t *testing.T) {
-			cap := captureKillTarget(t, nil)
+			c := captureKillTarget(t, nil)
 			s := &restartingState{job: makeRestartingJobInfo(5, 3)}
 
 			if err := s.Execute(Action{Action: tc.action}); err != nil {
 				t.Fatalf("Execute(%q) returned unexpected error: %v", tc.action, err)
 			}
-			if cap.job == nil {
+			if c.job == nil {
 				t.Fatal("KillTarget was not called")
 			}
 		})
@@ -343,14 +338,14 @@ func TestRestartingState_Execute_RestartTargetForwardsTarget(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cap := captureKillTarget(t, nil)
+			c := captureKillTarget(t, nil)
 			s := &restartingState{job: makeRestartingJobInfo(5, 3)}
 
 			if err := s.Execute(Action{Action: tc.action, Target: tc.target}); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if cap.target != tc.target {
-				t.Errorf("KillTarget received target %+v, want %+v", cap.target, tc.target)
+			if c.target != tc.target {
+				t.Errorf("KillTarget received target %+v, want %+v", c.target, tc.target)
 			}
 		})
 	}
@@ -359,19 +354,19 @@ func TestRestartingState_Execute_RestartTargetForwardsTarget(t *testing.T) {
 // TestRestartingState_Execute_RestartTargetUpdateFnIsRestartingUpdateStatus
 // verifies the updateFn forwarded to KillTarget is restartingUpdateStatus.
 func TestRestartingState_Execute_RestartTargetUpdateFnIsRestartingUpdateStatus(t *testing.T) {
-	cap := captureKillTarget(t, nil)
+	c := captureKillTarget(t, nil)
 	// MaxRetry=2, RetryCount=2 → updateFn should set Failed
 	s := &restartingState{job: makeRestartingJobInfo(2, 3)}
 
 	if err := s.Execute(Action{Action: v1alpha1.RestartTaskAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cap.updateFn == nil {
+	if c.updateFn == nil {
 		t.Fatal("expected non-nil updateFn")
 	}
 
 	status := &vcbatch.JobStatus{RetryCount: 2}
-	changed := cap.updateFn(status)
+	changed := c.updateFn(status)
 
 	if !changed {
 		t.Error("updateFn should return true")
@@ -393,9 +388,7 @@ func TestRestartingState_Execute_RestartTargetPropagatesError(t *testing.T) {
 	}
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// Execute — default branch (all other actions → KillJob)
-// ══════════════════════════════════════════════════════════════════════════════
+// --- Execute: default branch (all other actions -> KillJob) ---
 
 // TestRestartingState_Execute_DefaultActionsCallKillJob verifies that every
 // action not handled explicitly delegates to KillJob.
@@ -413,13 +406,13 @@ func TestRestartingState_Execute_DefaultActionsCallKillJob(t *testing.T) {
 	}
 	for _, tc := range defaultActions {
 		t.Run(tc.name, func(t *testing.T) {
-			cap := captureKillJob(t, nil)
+			c := captureKillJob(t, nil)
 			s := &restartingState{job: makeRestartingJobInfo(5, 3)}
 
 			if err := s.Execute(Action{Action: tc.action}); err != nil {
 				t.Fatalf("Execute(%q) returned unexpected error: %v", tc.action, err)
 			}
-			if cap.job == nil {
+			if c.job == nil {
 				t.Fatal("KillJob was not called")
 			}
 		})
@@ -430,48 +423,48 @@ func TestRestartingState_Execute_DefaultActionsCallKillJob(t *testing.T) {
 // branch passes PodRetainPhaseNone — all pods are killed including completed
 // ones, to allow a clean restart.
 func TestRestartingState_Execute_DefaultUsesRetainPhaseNone(t *testing.T) {
-	cap := captureKillJob(t, nil)
+	c := captureKillJob(t, nil)
 	s := &restartingState{job: makeRestartingJobInfo(5, 3)}
 
 	if err := s.Execute(Action{Action: v1alpha1.RestartJobAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(cap.podRetainPhase) != 0 {
-		t.Errorf("podRetainPhase should be empty (PhaseNone), got %v", cap.podRetainPhase)
+	if len(c.podRetainPhase) != 0 {
+		t.Errorf("podRetainPhase should be empty (PhaseNone), got %v", c.podRetainPhase)
 	}
 }
 
 // TestRestartingState_Execute_DefaultPassesJobInfo verifies the correct
 // JobInfo pointer is forwarded to KillJob.
 func TestRestartingState_Execute_DefaultPassesJobInfo(t *testing.T) {
-	cap := captureKillJob(t, nil)
+	c := captureKillJob(t, nil)
 	info := makeRestartingJobInfo(5, 3)
 	s := &restartingState{job: info}
 
 	if err := s.Execute(Action{Action: v1alpha1.RestartJobAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cap.job != info {
-		t.Errorf("KillJob received wrong JobInfo: got %p, want %p", cap.job, info)
+	if c.job != info {
+		t.Errorf("KillJob received wrong JobInfo: got %p, want %p", c.job, info)
 	}
 }
 
 // TestRestartingState_Execute_DefaultUpdateFnIsRestartingUpdateStatus verifies
 // the updateFn passed to KillJob is restartingUpdateStatus.
 func TestRestartingState_Execute_DefaultUpdateFnIsRestartingUpdateStatus(t *testing.T) {
-	cap := captureKillJob(t, nil)
+	c := captureKillJob(t, nil)
 	// MaxRetry=2, RetryCount=2 → updateFn should set Failed
 	s := &restartingState{job: makeRestartingJobInfo(2, 3)}
 
 	if err := s.Execute(Action{Action: v1alpha1.RestartJobAction}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cap.updateFn == nil {
+	if c.updateFn == nil {
 		t.Fatal("expected non-nil updateFn")
 	}
 
 	status := &vcbatch.JobStatus{RetryCount: 2}
-	changed := cap.updateFn(status)
+	changed := c.updateFn(status)
 
 	if !changed {
 		t.Error("updateFn should return true")
