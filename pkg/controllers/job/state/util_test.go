@@ -1,5 +1,5 @@
 /*
-Copyright 2026 The Volcano Authors.
+Copyright 2017 The Volcano Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -21,8 +21,6 @@ import (
 
 	vcbatch "volcano.sh/apis/pkg/apis/batch/v1alpha1"
 )
-
-func int32Ptr(v int32) *int32 { return &v }
 
 func TestUtilTotalTasks_NoTasks(t *testing.T) {
 	job := &vcbatch.Job{}
@@ -106,7 +104,7 @@ func TestUtilTotalTaskMinAvailable_NoTasks(t *testing.T) {
 	}
 }
 
-// MinAvailable == nil → falls back to Replicas.
+// MinAvailable == nil falls back to Replicas.
 func TestUtilTotalTaskMinAvailable_MinAvailableNil(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -137,7 +135,7 @@ func TestUtilTotalTaskMinAvailable_MinAvailableNil(t *testing.T) {
 	}
 }
 
-// MinAvailable set → uses MinAvailable value, ignores Replicas.
+// MinAvailable set wins over Replicas.
 func TestUtilTotalTaskMinAvailable_MinAvailableSet(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -178,7 +176,6 @@ func TestUtilTotalTaskMinAvailable_MinAvailableSet(t *testing.T) {
 	}
 }
 
-// Mixed: some tasks have MinAvailable set, others don't.
 func TestUtilTotalTaskMinAvailable_Mixed(t *testing.T) {
 	tests := []struct {
 		name  string

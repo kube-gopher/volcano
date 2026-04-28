@@ -1,5 +1,5 @@
 /*
-Copyright 2026 The Volcano Authors.
+Copyright 2017 The Volcano Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,10 +24,6 @@ import (
 	"volcano.sh/apis/pkg/apis/bus/v1alpha1"
 )
 
-// --- ResumeJobAction branch ---
-
-// TestAbortingState_Execute_ResumeCallsKillJob verifies that ResumeJobAction
-// delegates to KillJob.
 func TestAbortingState_Execute_ResumeCallsKillJob(t *testing.T) {
 	c := captureKillJob(t, nil)
 	s := &abortingState{job: makeJobInfo(vcbatch.Aborting)}
@@ -40,8 +36,6 @@ func TestAbortingState_Execute_ResumeCallsKillJob(t *testing.T) {
 	}
 }
 
-// TestAbortingState_Execute_ResumeUsesSoftRetainPhase verifies that
-// ResumeJobAction passes PodRetainPhaseSoft to KillJob.
 func TestAbortingState_Execute_ResumeUsesSoftRetainPhase(t *testing.T) {
 	c := captureKillJob(t, nil)
 	s := &abortingState{job: makeJobInfo(vcbatch.Aborting)}
@@ -59,8 +53,6 @@ func TestAbortingState_Execute_ResumeUsesSoftRetainPhase(t *testing.T) {
 	}
 }
 
-// TestAbortingState_Execute_ResumeUpdateFnSetsRestarting verifies the
-// updateFn transitions the phase to Restarting and returns true.
 func TestAbortingState_Execute_ResumeUpdateFnSetsRestarting(t *testing.T) {
 	c := captureKillJob(t, nil)
 	s := &abortingState{job: makeJobInfo(vcbatch.Aborting)}
@@ -83,8 +75,6 @@ func TestAbortingState_Execute_ResumeUpdateFnSetsRestarting(t *testing.T) {
 	}
 }
 
-// TestAbortingState_Execute_ResumeUpdateFnIncrementsRetryCount verifies the
-// updateFn increments RetryCount on each Resume.
 func TestAbortingState_Execute_ResumeUpdateFnIncrementsRetryCount(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -116,8 +106,6 @@ func TestAbortingState_Execute_ResumeUpdateFnIncrementsRetryCount(t *testing.T) 
 	}
 }
 
-// TestAbortingState_Execute_ResumePassesJobInfo verifies the correct JobInfo
-// pointer is forwarded to KillJob for ResumeJobAction.
 func TestAbortingState_Execute_ResumePassesJobInfo(t *testing.T) {
 	c := captureKillJob(t, nil)
 	info := makeJobInfo(vcbatch.Aborting)
@@ -131,8 +119,6 @@ func TestAbortingState_Execute_ResumePassesJobInfo(t *testing.T) {
 	}
 }
 
-// TestAbortingState_Execute_ResumePropagatesError verifies that KillJob errors
-// are surfaced for ResumeJobAction.
 func TestAbortingState_Execute_ResumePropagatesError(t *testing.T) {
 	want := errors.New("kill failed")
 	captureKillJob(t, want)
@@ -143,10 +129,6 @@ func TestAbortingState_Execute_ResumePropagatesError(t *testing.T) {
 	}
 }
 
-// --- default branch (all non-Resume actions) ---
-
-// TestAbortingState_Execute_DefaultActionsCallKillJob verifies that every
-// non-Resume action delegates to KillJob.
 func TestAbortingState_Execute_DefaultActionsCallKillJob(t *testing.T) {
 	defaultActions := []struct {
 		name   string
@@ -178,8 +160,6 @@ func TestAbortingState_Execute_DefaultActionsCallKillJob(t *testing.T) {
 	}
 }
 
-// TestAbortingState_Execute_DefaultUsesSoftRetainPhase verifies the default
-// branch also passes PodRetainPhaseSoft to KillJob.
 func TestAbortingState_Execute_DefaultUsesSoftRetainPhase(t *testing.T) {
 	c := captureKillJob(t, nil)
 	s := &abortingState{job: makeJobInfo(vcbatch.Aborting)}
@@ -197,8 +177,8 @@ func TestAbortingState_Execute_DefaultUsesSoftRetainPhase(t *testing.T) {
 	}
 }
 
-// TestAbortingState_Execute_DefaultNonNilUpdateFn verifies the default branch
-// passes a non-nil updateFn (unlike abortedState which passes nil).
+// abortingState (unlike abortedState) drives a phase transition, so updateFn
+// cannot be nil.
 func TestAbortingState_Execute_DefaultNonNilUpdateFn(t *testing.T) {
 	c := captureKillJob(t, nil)
 	s := &abortingState{job: makeJobInfo(vcbatch.Aborting)}
@@ -211,9 +191,8 @@ func TestAbortingState_Execute_DefaultNonNilUpdateFn(t *testing.T) {
 	}
 }
 
-// TestAbortingState_Execute_DefaultUpdateFnAlivePods verifies that the default
-// updateFn returns false and keeps the phase unchanged while any "alive" pod
-// counter (Terminating, Pending, or Running) is non-zero.
+// "Alive" counters = Terminating | Pending | Running. Any of them being
+// non-zero must keep the job in Aborting.
 func TestAbortingState_Execute_DefaultUpdateFnAlivePods(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -267,9 +246,6 @@ func TestAbortingState_Execute_DefaultUpdateFnAlivePods(t *testing.T) {
 	}
 }
 
-// TestAbortingState_Execute_DefaultUpdateFnAllPodsGone verifies that the
-// default updateFn returns true and transitions the phase to Aborted when all
-// alive pod counters are zero.
 func TestAbortingState_Execute_DefaultUpdateFnAllPodsGone(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -312,8 +288,6 @@ func TestAbortingState_Execute_DefaultUpdateFnAllPodsGone(t *testing.T) {
 	}
 }
 
-// TestAbortingState_Execute_DefaultPropagatesError verifies that KillJob
-// errors are surfaced for default-branch actions.
 func TestAbortingState_Execute_DefaultPropagatesError(t *testing.T) {
 	want := errors.New("kill failed")
 	captureKillJob(t, want)

@@ -1,5 +1,5 @@
 /*
-Copyright 2026 The Volcano Authors.
+Copyright 2017 The Volcano Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -26,8 +26,6 @@ import (
 	"volcano.sh/apis/pkg/apis/bus/v1alpha1"
 )
 
-// TestFinishedState_Execute_ActionAgnostic verifies that Execute always
-// delegates to KillJob regardless of the action type.
 func TestFinishedState_Execute_ActionAgnostic(t *testing.T) {
 	actions := []struct {
 		name   string
@@ -61,9 +59,6 @@ func TestFinishedState_Execute_ActionAgnostic(t *testing.T) {
 	}
 }
 
-// TestFinishedState_Execute_UsesSoftRetainPhase verifies that Execute passes
-// PodRetainPhaseSoft (Succeeded + Failed retained) rather than
-// PodRetainPhaseNone (all pods killed).
 func TestFinishedState_Execute_UsesSoftRetainPhase(t *testing.T) {
 	c := captureKillJob(t, nil)
 	s := &finishedState{job: makeJobInfo(vcbatch.Completed)}
@@ -82,8 +77,7 @@ func TestFinishedState_Execute_UsesSoftRetainPhase(t *testing.T) {
 	}
 }
 
-// TestFinishedState_Execute_NilUpdateFn verifies that Execute passes a nil
-// update function: the finished state must not change job phase.
+// finishedState is terminal: updateFn must be nil so KillJob never mutates phase.
 func TestFinishedState_Execute_NilUpdateFn(t *testing.T) {
 	c := captureKillJob(t, nil)
 	s := &finishedState{job: makeJobInfo(vcbatch.Completed)}
@@ -96,8 +90,6 @@ func TestFinishedState_Execute_NilUpdateFn(t *testing.T) {
 	}
 }
 
-// TestFinishedState_Execute_PassesJobInfo verifies that Execute forwards the
-// correct JobInfo pointer to KillJob.
 func TestFinishedState_Execute_PassesJobInfo(t *testing.T) {
 	c := captureKillJob(t, nil)
 	info := makeJobInfo(vcbatch.Terminated)
@@ -111,8 +103,6 @@ func TestFinishedState_Execute_PassesJobInfo(t *testing.T) {
 	}
 }
 
-// TestFinishedState_Execute_PropagatesError verifies that any error returned
-// by KillJob is surfaced to the caller unchanged.
 func TestFinishedState_Execute_PropagatesError(t *testing.T) {
 	want := errors.New("kill failed")
 	captureKillJob(t, want)

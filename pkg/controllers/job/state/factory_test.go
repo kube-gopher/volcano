@@ -1,5 +1,5 @@
 /*
-Copyright 2026 The Volcano Authors.
+Copyright 2017 The Volcano Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -21,26 +21,32 @@ import (
 	"testing"
 
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	vcbatch "volcano.sh/apis/pkg/apis/batch/v1alpha1"
 
 	"volcano.sh/volcano/pkg/controllers/apis"
 )
 
-// makeJobInfo constructs a minimal JobInfo with the given phase.
-func makeJobInfo(phase vcbatch.JobPhase) *apis.JobInfo {
-	return &apis.JobInfo{
-		Job: &vcbatch.Job{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test-job",
-				Namespace: "default",
-			},
-			Status: vcbatch.JobStatus{
-				State: vcbatch.JobState{Phase: phase},
-			},
-		},
+func extractJobInfo(s State) *apis.JobInfo {
+	switch v := s.(type) {
+	case *pendingState:
+		return v.job
+	case *runningState:
+		return v.job
+	case *restartingState:
+		return v.job
+	case *abortingState:
+		return v.job
+	case *abortedState:
+		return v.job
+	case *completingState:
+		return v.job
+	case *terminatingState:
+		return v.job
+	case *finishedState:
+		return v.job
 	}
+	return nil
 }
 
 func TestNewState_KnownPhases(t *testing.T) {
@@ -96,7 +102,6 @@ func TestNewState_KnownPhases(t *testing.T) {
 	}
 }
 
-// Terminated, Completed, and Failed all map to finishedState.
 func TestNewState_FinishedPhases(t *testing.T) {
 	finishedType := reflect.TypeOf(&finishedState{})
 	phases := []vcbatch.JobPhase{
@@ -114,7 +119,6 @@ func TestNewState_FinishedPhases(t *testing.T) {
 	}
 }
 
-// Unknown or empty phase falls back to pendingState.
 func TestNewState_DefaultPhase(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -133,97 +137,38 @@ func TestNewState_DefaultPhase(t *testing.T) {
 	}
 }
 
-// NewState must embed the same JobInfo pointer that was passed in.
 func TestNewState_JobInfoBinding(t *testing.T) {
-	tests := []struct {
-		name      string
-		phase     vcbatch.JobPhase
-		checkFunc func(got State) *apis.JobInfo
-	}{
-		{
-			name:  "pendingState binds jobInfo",
-			phase: vcbatch.Pending,
-			checkFunc: func(got State) *apis.JobInfo {
-				s, _ := got.(*pendingState)
-				return s.job
-			},
-		},
-		{
-			name:  "runningState binds jobInfo",
-			phase: vcbatch.Running,
-			checkFunc: func(got State) *apis.JobInfo {
-				s, _ := got.(*runningState)
-				return s.job
-			},
-		},
-		{
-			name:  "restartingState binds jobInfo",
-			phase: vcbatch.Restarting,
-			checkFunc: func(got State) *apis.JobInfo {
-				s, _ := got.(*restartingState)
-				return s.job
-			},
-		},
-		{
-			name:  "abortingState binds jobInfo",
-			phase: vcbatch.Aborting,
-			checkFunc: func(got State) *apis.JobInfo {
-				s, _ := got.(*abortingState)
-				return s.job
-			},
-		},
-		{
-			name:  "abortedState binds jobInfo",
-			phase: vcbatch.Aborted,
-			checkFunc: func(got State) *apis.JobInfo {
-				s, _ := got.(*abortedState)
-				return s.job
-			},
-		},
-		{
-			name:  "completingState binds jobInfo",
-			phase: vcbatch.Completing,
-			checkFunc: func(got State) *apis.JobInfo {
-				s, _ := got.(*completingState)
-				return s.job
-			},
-		},
-		{
-			name:  "terminatingState binds jobInfo",
-			phase: vcbatch.Terminating,
-			checkFunc: func(got State) *apis.JobInfo {
-				s, _ := got.(*terminatingState)
-				return s.job
-			},
-		},
-		{
-			name:  "finishedState binds jobInfo",
-			phase: vcbatch.Completed,
-			checkFunc: func(got State) *apis.JobInfo {
-				s, _ := got.(*finishedState)
-				return s.job
-			},
-		},
+	phases := []vcbatch.JobPhase{
+		vcbatch.Pending,
+		vcbatch.Running,
+		vcbatch.Restarting,
+		vcbatch.Aborting,
+		vcbatch.Aborted,
+		vcbatch.Completing,
+		vcbatch.Terminating,
+		vcbatch.Completed,
 	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			info := makeJobInfo(tc.phase)
+	for _, phase := range phases {
+		t.Run(string(phase), func(t *testing.T) {
+			info := makeJobInfo(phase)
 			got := NewState(info)
-			if bound := tc.checkFunc(got); bound != info {
+			bound := extractJobInfo(got)
+			if bound == nil {
+				t.Fatalf("extractJobInfo returned nil for state %T", got)
+			}
+			if bound != info {
 				t.Errorf("state.job pointer mismatch: got %p, want %p", bound, info)
 			}
 		})
 	}
 }
 
-// PodRetainPhaseNone must be an empty set — no phases are retained.
 func TestNewState_PodRetainPhaseNone(t *testing.T) {
 	if len(PodRetainPhaseNone) != 0 {
 		t.Errorf("PodRetainPhaseNone should be empty, got %v", PodRetainPhaseNone)
 	}
 }
 
-// PodRetainPhaseSoft must contain exactly PodSucceeded and PodFailed.
 func TestNewState_PodRetainPhaseSoft(t *testing.T) {
 	if _, ok := PodRetainPhaseSoft[v1.PodSucceeded]; !ok {
 		t.Error("PodRetainPhaseSoft missing PodSucceeded")

@@ -1,5 +1,5 @@
 /*
-Copyright 2026 The Volcano Authors.
+Copyright 2017 The Volcano Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,10 +24,6 @@ import (
 	"volcano.sh/apis/pkg/apis/bus/v1alpha1"
 )
 
-// --- action-agnostic behaviour ---
-
-// TestTerminatingState_Execute_ActionAgnostic verifies that Execute always
-// delegates to KillJob regardless of the action type received.
 func TestTerminatingState_Execute_ActionAgnostic(t *testing.T) {
 	actions := []struct {
 		name   string
@@ -60,10 +56,6 @@ func TestTerminatingState_Execute_ActionAgnostic(t *testing.T) {
 	}
 }
 
-// --- KillJob call arguments ---
-
-// TestTerminatingState_Execute_UsesSoftRetainPhase verifies that Execute
-// passes PodRetainPhaseSoft so Succeeded/Failed pods are preserved.
 func TestTerminatingState_Execute_UsesSoftRetainPhase(t *testing.T) {
 	c := captureKillJob(t, nil)
 	s := &terminatingState{job: makeJobInfo(vcbatch.Terminating)}
@@ -81,8 +73,8 @@ func TestTerminatingState_Execute_UsesSoftRetainPhase(t *testing.T) {
 	}
 }
 
-// TestTerminatingState_Execute_NonNilUpdateFn verifies the updateFn is not nil
-// — unlike finishedState, terminatingState drives a phase transition.
+// terminatingState (unlike finishedState) drives a phase transition, so
+// updateFn cannot be nil.
 func TestTerminatingState_Execute_NonNilUpdateFn(t *testing.T) {
 	c := captureKillJob(t, nil)
 	s := &terminatingState{job: makeJobInfo(vcbatch.Terminating)}
@@ -95,8 +87,6 @@ func TestTerminatingState_Execute_NonNilUpdateFn(t *testing.T) {
 	}
 }
 
-// TestTerminatingState_Execute_PassesJobInfo verifies the correct JobInfo
-// pointer is forwarded to KillJob.
 func TestTerminatingState_Execute_PassesJobInfo(t *testing.T) {
 	c := captureKillJob(t, nil)
 	info := makeJobInfo(vcbatch.Terminating)
@@ -110,8 +100,6 @@ func TestTerminatingState_Execute_PassesJobInfo(t *testing.T) {
 	}
 }
 
-// TestTerminatingState_Execute_PropagatesError verifies that any error
-// returned by KillJob is surfaced to the caller unchanged.
 func TestTerminatingState_Execute_PropagatesError(t *testing.T) {
 	want := errors.New("kill failed")
 	captureKillJob(t, want)
@@ -122,11 +110,8 @@ func TestTerminatingState_Execute_PropagatesError(t *testing.T) {
 	}
 }
 
-// --- updateFn logic: alive pods present → stay Terminating ---
-
-// TestTerminatingState_Execute_UpdateFnAlivePods verifies that the updateFn
-// returns false and leaves the phase unchanged whenever any "alive" pod
-// counter (Terminating, Pending, or Running) is non-zero.
+// "Alive" counters = Terminating | Pending | Running. Any of them being
+// non-zero must keep the job in Terminating.
 func TestTerminatingState_Execute_UpdateFnAlivePods(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -180,11 +165,6 @@ func TestTerminatingState_Execute_UpdateFnAlivePods(t *testing.T) {
 	}
 }
 
-// --- updateFn logic: all alive pods drained → Terminated ---
-
-// TestTerminatingState_Execute_UpdateFnAllPodsGone verifies that the updateFn
-// returns true and transitions the phase to Terminated when all alive pod
-// counters are zero.
 func TestTerminatingState_Execute_UpdateFnAllPodsGone(t *testing.T) {
 	tests := []struct {
 		name   string

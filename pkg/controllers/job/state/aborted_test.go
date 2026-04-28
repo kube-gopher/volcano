@@ -1,5 +1,5 @@
 /*
-Copyright 2026 The Volcano Authors.
+Copyright 2017 The Volcano Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,38 +22,8 @@ import (
 
 	vcbatch "volcano.sh/apis/pkg/apis/batch/v1alpha1"
 	"volcano.sh/apis/pkg/apis/bus/v1alpha1"
-
-	"volcano.sh/volcano/pkg/controllers/apis"
 )
 
-// capturedKillJob records one KillJob invocation and preserves the updateFn
-// so tests can invoke it directly to verify the state-transition logic.
-type capturedKillJob struct {
-	job            *apis.JobInfo
-	podRetainPhase PhaseMap
-	updateFn       UpdateStatusFn
-}
-
-// captureKillJob replaces KillJob with a stub that records its arguments and
-// returns returnErr. The original value is restored via t.Cleanup.
-func captureKillJob(t *testing.T, returnErr error) *capturedKillJob {
-	t.Helper()
-	original := KillJob
-	c := &capturedKillJob{}
-	KillJob = func(job *apis.JobInfo, podRetainPhase PhaseMap, fn UpdateStatusFn) error {
-		c.job = job
-		c.podRetainPhase = podRetainPhase
-		c.updateFn = fn
-		return returnErr
-	}
-	t.Cleanup(func() { KillJob = original })
-	return c
-}
-
-// --- ResumeJobAction branch ---
-
-// TestAbortedState_Execute_ResumeCallsKillJob verifies that ResumeJobAction
-// delegates to KillJob (not SyncJob or KillTarget).
 func TestAbortedState_Execute_ResumeCallsKillJob(t *testing.T) {
 	c := captureKillJob(t, nil)
 	s := &abortedState{job: makeJobInfo(vcbatch.Aborted)}
@@ -66,8 +36,6 @@ func TestAbortedState_Execute_ResumeCallsKillJob(t *testing.T) {
 	}
 }
 
-// TestAbortedState_Execute_ResumeUsesSoftRetainPhase verifies that
-// ResumeJobAction retains Succeeded/Failed pods (soft, not none).
 func TestAbortedState_Execute_ResumeUsesSoftRetainPhase(t *testing.T) {
 	c := captureKillJob(t, nil)
 	s := &abortedState{job: makeJobInfo(vcbatch.Aborted)}
@@ -85,8 +53,6 @@ func TestAbortedState_Execute_ResumeUsesSoftRetainPhase(t *testing.T) {
 	}
 }
 
-// TestAbortedState_Execute_ResumeUpdateFnSetsRestarting verifies the updateFn
-// passed by ResumeJobAction transitions the phase to Restarting.
 func TestAbortedState_Execute_ResumeUpdateFnSetsRestarting(t *testing.T) {
 	c := captureKillJob(t, nil)
 	s := &abortedState{job: makeJobInfo(vcbatch.Aborted)}
@@ -109,8 +75,6 @@ func TestAbortedState_Execute_ResumeUpdateFnSetsRestarting(t *testing.T) {
 	}
 }
 
-// TestAbortedState_Execute_ResumeUpdateFnIncrementsRetryCount verifies the
-// updateFn increments RetryCount on each Resume.
 func TestAbortedState_Execute_ResumeUpdateFnIncrementsRetryCount(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -142,8 +106,6 @@ func TestAbortedState_Execute_ResumeUpdateFnIncrementsRetryCount(t *testing.T) {
 	}
 }
 
-// TestAbortedState_Execute_ResumePassesJobInfo verifies the correct JobInfo
-// pointer is forwarded to KillJob for ResumeJobAction.
 func TestAbortedState_Execute_ResumePassesJobInfo(t *testing.T) {
 	c := captureKillJob(t, nil)
 	info := makeJobInfo(vcbatch.Aborted)
@@ -157,8 +119,6 @@ func TestAbortedState_Execute_ResumePassesJobInfo(t *testing.T) {
 	}
 }
 
-// TestAbortedState_Execute_ResumePropagatesError verifies that KillJob errors
-// are surfaced for ResumeJobAction.
 func TestAbortedState_Execute_ResumePropagatesError(t *testing.T) {
 	want := errors.New("kill failed")
 	captureKillJob(t, want)
@@ -169,10 +129,6 @@ func TestAbortedState_Execute_ResumePropagatesError(t *testing.T) {
 	}
 }
 
-// --- default branch (all non-Resume actions) ---
-
-// TestAbortedState_Execute_DefaultActionsCallKillJob verifies that every
-// non-Resume action also delegates to KillJob.
 func TestAbortedState_Execute_DefaultActionsCallKillJob(t *testing.T) {
 	defaultActions := []struct {
 		name   string
@@ -204,8 +160,7 @@ func TestAbortedState_Execute_DefaultActionsCallKillJob(t *testing.T) {
 	}
 }
 
-// TestAbortedState_Execute_DefaultNilUpdateFn verifies that the default branch
-// passes a nil updateFn — it must not alter the job phase.
+// Default branch must pass nil updateFn so KillJob does not change the phase.
 func TestAbortedState_Execute_DefaultNilUpdateFn(t *testing.T) {
 	c := captureKillJob(t, nil)
 	s := &abortedState{job: makeJobInfo(vcbatch.Aborted)}
@@ -218,8 +173,6 @@ func TestAbortedState_Execute_DefaultNilUpdateFn(t *testing.T) {
 	}
 }
 
-// TestAbortedState_Execute_DefaultUsesSoftRetainPhase verifies that the
-// default branch also retains Succeeded/Failed pods.
 func TestAbortedState_Execute_DefaultUsesSoftRetainPhase(t *testing.T) {
 	c := captureKillJob(t, nil)
 	s := &abortedState{job: makeJobInfo(vcbatch.Aborted)}
@@ -237,8 +190,6 @@ func TestAbortedState_Execute_DefaultUsesSoftRetainPhase(t *testing.T) {
 	}
 }
 
-// TestAbortedState_Execute_DefaultPropagatesError verifies that KillJob errors
-// are surfaced for default-branch actions.
 func TestAbortedState_Execute_DefaultPropagatesError(t *testing.T) {
 	want := errors.New("kill failed")
 	captureKillJob(t, want)

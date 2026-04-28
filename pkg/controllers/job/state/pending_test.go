@@ -1,5 +1,5 @@
 /*
-Copyright 2026 The Volcano Authors.
+Copyright 2017 The Volcano Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,72 +20,10 @@ import (
 	"errors"
 	"testing"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	vcbatch "volcano.sh/apis/pkg/apis/batch/v1alpha1"
 	"volcano.sh/apis/pkg/apis/bus/v1alpha1"
-
-	"volcano.sh/volcano/pkg/controllers/apis"
 )
 
-// --- stub helpers ---
-
-// capturedKillTarget records one KillTarget invocation and preserves the
-// updateFn so tests can invoke it to verify state-transition logic.
-type capturedKillTarget struct {
-	job      *apis.JobInfo
-	target   Target
-	updateFn UpdateStatusFn
-}
-
-func captureKillTarget(t *testing.T, returnErr error) *capturedKillTarget {
-	t.Helper()
-	original := KillTarget
-	c := &capturedKillTarget{}
-	KillTarget = func(job *apis.JobInfo, target Target, fn UpdateStatusFn) error {
-		c.job = job
-		c.target = target
-		c.updateFn = fn
-		return returnErr
-	}
-	t.Cleanup(func() { KillTarget = original })
-	return c
-}
-
-// capturedSyncJob records one SyncJob invocation and preserves the updateFn.
-type capturedSyncJob struct {
-	job      *apis.JobInfo
-	updateFn UpdateStatusFn
-}
-
-func captureSyncJob(t *testing.T, returnErr error) *capturedSyncJob {
-	t.Helper()
-	original := SyncJob
-	c := &capturedSyncJob{}
-	SyncJob = func(job *apis.JobInfo, fn UpdateStatusFn) error {
-		c.job = job
-		c.updateFn = fn
-		return returnErr
-	}
-	t.Cleanup(func() { SyncJob = original })
-	return c
-}
-
-// makeJobInfoWithSpec builds a JobInfo with the given phase and MinAvailable.
-func makeJobInfoWithSpec(phase vcbatch.JobPhase, minAvailable int32) *apis.JobInfo {
-	return &apis.JobInfo{
-		Job: &vcbatch.Job{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-job", Namespace: "default"},
-			Spec:       vcbatch.JobSpec{MinAvailable: minAvailable},
-			Status:     vcbatch.JobStatus{State: vcbatch.JobState{Phase: phase}},
-		},
-	}
-}
-
-// --- RestartJobAction branch ---
-
-// TestPendingState_Execute_RestartJobCallsKillJob verifies RestartJobAction
-// delegates to KillJob (not SyncJob or KillTarget).
 func TestPendingState_Execute_RestartJobCallsKillJob(t *testing.T) {
 	c := captureKillJob(t, nil)
 	s := &pendingState{job: makeJobInfo(vcbatch.Pending)}
@@ -98,9 +36,8 @@ func TestPendingState_Execute_RestartJobCallsKillJob(t *testing.T) {
 	}
 }
 
-// TestPendingState_Execute_RestartJobUsesRetainPhaseNone verifies that
-// RestartJobAction passes PodRetainPhaseNone — all pods are killed, including
-// already-completed ones (unlike Abort/Complete/Terminate which use Soft).
+// RestartJobAction uses PodRetainPhaseNone (kills completed pods too) — unlike
+// Abort/Complete/Terminate which use Soft.
 func TestPendingState_Execute_RestartJobUsesRetainPhaseNone(t *testing.T) {
 	c := captureKillJob(t, nil)
 	s := &pendingState{job: makeJobInfo(vcbatch.Pending)}
@@ -113,8 +50,6 @@ func TestPendingState_Execute_RestartJobUsesRetainPhaseNone(t *testing.T) {
 	}
 }
 
-// TestPendingState_Execute_RestartJobUpdateFn verifies the updateFn sets
-// Phase to Restarting, increments RetryCount, and returns true.
 func TestPendingState_Execute_RestartJobUpdateFn(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -155,8 +90,6 @@ func TestPendingState_Execute_RestartJobUpdateFn(t *testing.T) {
 	}
 }
 
-// TestPendingState_Execute_RestartJobPassesJobInfo verifies the correct
-// JobInfo pointer is forwarded to KillJob.
 func TestPendingState_Execute_RestartJobPassesJobInfo(t *testing.T) {
 	c := captureKillJob(t, nil)
 	info := makeJobInfo(vcbatch.Pending)
@@ -170,8 +103,6 @@ func TestPendingState_Execute_RestartJobPassesJobInfo(t *testing.T) {
 	}
 }
 
-// TestPendingState_Execute_RestartJobPropagatesError verifies KillJob errors
-// are surfaced.
 func TestPendingState_Execute_RestartJobPropagatesError(t *testing.T) {
 	want := errors.New("kill failed")
 	captureKillJob(t, want)
@@ -182,10 +113,6 @@ func TestPendingState_Execute_RestartJobPropagatesError(t *testing.T) {
 	}
 }
 
-// --- RestartTask / RestartPod / RestartPartition branch ---
-
-// TestPendingState_Execute_RestartTargetActionsCallKillTarget verifies that
-// all three granular restart actions delegate to KillTarget.
 func TestPendingState_Execute_RestartTargetActionsCallKillTarget(t *testing.T) {
 	actions := []struct {
 		name   string
@@ -210,8 +137,6 @@ func TestPendingState_Execute_RestartTargetActionsCallKillTarget(t *testing.T) {
 	}
 }
 
-// TestPendingState_Execute_RestartTargetForwardsTarget verifies that the
-// Target embedded in the Action is forwarded unchanged to KillTarget.
 func TestPendingState_Execute_RestartTargetForwardsTarget(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -249,8 +174,6 @@ func TestPendingState_Execute_RestartTargetForwardsTarget(t *testing.T) {
 	}
 }
 
-// TestPendingState_Execute_RestartTargetUpdateFn verifies the updateFn sets
-// Phase to Restarting, increments RetryCount, and returns true.
 func TestPendingState_Execute_RestartTargetUpdateFn(t *testing.T) {
 	c := captureKillTarget(t, nil)
 	s := &pendingState{job: makeJobInfo(vcbatch.Pending)}
@@ -276,8 +199,6 @@ func TestPendingState_Execute_RestartTargetUpdateFn(t *testing.T) {
 	}
 }
 
-// TestPendingState_Execute_RestartTargetPropagatesError verifies KillTarget
-// errors are surfaced.
 func TestPendingState_Execute_RestartTargetPropagatesError(t *testing.T) {
 	want := errors.New("kill target failed")
 	captureKillTarget(t, want)
@@ -288,10 +209,6 @@ func TestPendingState_Execute_RestartTargetPropagatesError(t *testing.T) {
 	}
 }
 
-// --- AbortJobAction / CompleteJobAction / TerminateJobAction branches ---
-
-// TestPendingState_Execute_KillJobBranchesUsesSoftRetainPhase verifies that
-// Abort, Complete, and Terminate all call KillJob with PodRetainPhaseSoft.
 func TestPendingState_Execute_KillJobBranchesUsesSoftRetainPhase(t *testing.T) {
 	actions := []v1alpha1.Action{
 		v1alpha1.AbortJobAction,
@@ -318,8 +235,6 @@ func TestPendingState_Execute_KillJobBranchesUsesSoftRetainPhase(t *testing.T) {
 	}
 }
 
-// TestPendingState_Execute_KillJobBranchesUpdateFn verifies each action's
-// updateFn transitions to the correct target phase and returns true.
 func TestPendingState_Execute_KillJobBranchesUpdateFn(t *testing.T) {
 	tests := []struct {
 		action    v1alpha1.Action
@@ -354,8 +269,6 @@ func TestPendingState_Execute_KillJobBranchesUpdateFn(t *testing.T) {
 	}
 }
 
-// TestPendingState_Execute_KillJobBranchesPropagatesError verifies KillJob
-// errors are surfaced for Abort, Complete, and Terminate.
 func TestPendingState_Execute_KillJobBranchesPropagatesError(t *testing.T) {
 	want := errors.New("kill failed")
 	actions := []v1alpha1.Action{
@@ -375,10 +288,6 @@ func TestPendingState_Execute_KillJobBranchesPropagatesError(t *testing.T) {
 	}
 }
 
-// --- default branch (SyncJob) ---
-
-// TestPendingState_Execute_DefaultCallsSyncJob verifies the default path
-// calls SyncJob (not KillJob or KillTarget).
 func TestPendingState_Execute_DefaultCallsSyncJob(t *testing.T) {
 	c := captureSyncJob(t, nil)
 	s := &pendingState{job: makeJobInfo(vcbatch.Pending)}
@@ -391,11 +300,9 @@ func TestPendingState_Execute_DefaultCallsSyncJob(t *testing.T) {
 	}
 }
 
-// TestPendingState_Execute_DefaultPassesJobInfo verifies the correct JobInfo
-// pointer is forwarded to SyncJob.
 func TestPendingState_Execute_DefaultPassesJobInfo(t *testing.T) {
 	c := captureSyncJob(t, nil)
-	info := makeJobInfoWithSpec(vcbatch.Pending, 1)
+	info := makeJobInfo(vcbatch.Pending, withMinAvailable(1))
 	s := &pendingState{job: info}
 
 	if err := s.Execute(Action{Action: v1alpha1.SyncJobAction}); err != nil {
@@ -406,8 +313,6 @@ func TestPendingState_Execute_DefaultPassesJobInfo(t *testing.T) {
 	}
 }
 
-// TestPendingState_Execute_DefaultUpdateFnTransitionsToRunning verifies the
-// updateFn transitions to Running when Running+Succeeded+Failed >= MinAvailable.
 func TestPendingState_Execute_DefaultUpdateFnTransitionsToRunning(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -443,7 +348,7 @@ func TestPendingState_Execute_DefaultUpdateFnTransitionsToRunning(t *testing.T) 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			c := captureSyncJob(t, nil)
-			s := &pendingState{job: makeJobInfoWithSpec(vcbatch.Pending, tc.minAvailable)}
+			s := &pendingState{job: makeJobInfo(vcbatch.Pending, withMinAvailable(tc.minAvailable))}
 
 			if err := s.Execute(Action{Action: v1alpha1.SyncJobAction}); err != nil {
 				t.Fatalf("unexpected error: %v", err)
@@ -464,9 +369,6 @@ func TestPendingState_Execute_DefaultUpdateFnTransitionsToRunning(t *testing.T) 
 	}
 }
 
-// TestPendingState_Execute_DefaultUpdateFnStaysPending verifies the updateFn
-// returns false and leaves phase unchanged when Running+Succeeded+Failed <
-// MinAvailable.
 func TestPendingState_Execute_DefaultUpdateFnStaysPending(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -484,6 +386,7 @@ func TestPendingState_Execute_DefaultUpdateFnStaysPending(t *testing.T) {
 			status:       vcbatch.JobStatus{Running: 1, Succeeded: 1},
 		},
 		{
+			// Pending pods do not count toward MinAvailable.
 			name:         "only Pending pods, not counted",
 			minAvailable: 2,
 			status:       vcbatch.JobStatus{Pending: 5, Running: 0},
@@ -492,7 +395,7 @@ func TestPendingState_Execute_DefaultUpdateFnStaysPending(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			c := captureSyncJob(t, nil)
-			s := &pendingState{job: makeJobInfoWithSpec(vcbatch.Pending, tc.minAvailable)}
+			s := &pendingState{job: makeJobInfo(vcbatch.Pending, withMinAvailable(tc.minAvailable))}
 
 			if err := s.Execute(Action{Action: v1alpha1.SyncJobAction}); err != nil {
 				t.Fatalf("unexpected error: %v", err)
@@ -514,8 +417,6 @@ func TestPendingState_Execute_DefaultUpdateFnStaysPending(t *testing.T) {
 	}
 }
 
-// TestPendingState_Execute_DefaultPropagatesError verifies SyncJob errors are
-// surfaced for the default branch.
 func TestPendingState_Execute_DefaultPropagatesError(t *testing.T) {
 	want := errors.New("sync failed")
 	captureSyncJob(t, want)

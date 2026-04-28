@@ -1,5 +1,5 @@
 /*
-Copyright 2026 The Volcano Authors.
+Copyright 2017 The Volcano Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,40 +20,18 @@ import (
 	"errors"
 	"testing"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	vcbatch "volcano.sh/apis/pkg/apis/batch/v1alpha1"
 	"volcano.sh/apis/pkg/apis/bus/v1alpha1"
 
 	"volcano.sh/volcano/pkg/controllers/apis"
 )
 
-// makeRestartingJobInfo builds a JobInfo configured for restarting-state tests.
-// taskReplicas controls how many replicas each task has; maxRetry sets the
-// job-level retry ceiling.
 func makeRestartingJobInfo(maxRetry int32, taskReplicas ...int32) *apis.JobInfo {
-	tasks := make([]vcbatch.TaskSpec, len(taskReplicas))
-	for i, r := range taskReplicas {
-		tasks[i] = vcbatch.TaskSpec{Replicas: r}
-	}
-	return &apis.JobInfo{
-		Job: &vcbatch.Job{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-job", Namespace: "default"},
-			Spec: vcbatch.JobSpec{
-				MaxRetry: maxRetry,
-				Tasks:    tasks,
-			},
-			Status: vcbatch.JobStatus{
-				State: vcbatch.JobState{Phase: vcbatch.Restarting},
-			},
-		},
-	}
+	return makeJobInfo(vcbatch.Restarting,
+		withMaxRetry(maxRetry),
+		withTaskReplicas(taskReplicas...))
 }
 
-// --- restartingUpdateStatus: direct method tests ---
-
-// TestRestartingState_UpdateStatus_ExceedsMaxRetry verifies that when
-// RetryCount >= MaxRetry the method sets Phase to Failed and returns true.
 func TestRestartingState_UpdateStatus_ExceedsMaxRetry(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -84,46 +62,43 @@ func TestRestartingState_UpdateStatus_ExceedsMaxRetry(t *testing.T) {
 	}
 }
 
-// TestRestartingState_UpdateStatus_MeetsMinAvailable verifies that when
-// RetryCount < MaxRetry and (total replicas - Terminating) >= status.MinAvailable
-// the method sets Phase to Pending and returns true.
 func TestRestartingState_UpdateStatus_MeetsMinAvailable(t *testing.T) {
 	tests := []struct {
 		name         string
-		taskReplicas []int32 // total is their sum
+		taskReplicas []int32
 		terminating  int32
 		minAvailable int32
 	}{
 		{
 			name:         "no terminating pods, exactly meets minAvailable",
-			taskReplicas: []int32{3, 2}, // total = 5
+			taskReplicas: []int32{3, 2},
 			terminating:  0,
-			minAvailable: 5, // 5-0=5 >= 5
+			minAvailable: 5,
 		},
 		{
 			name:         "some terminating pods, still meets minAvailable",
-			taskReplicas: []int32{3, 2}, // total = 5
+			taskReplicas: []int32{3, 2},
 			terminating:  2,
-			minAvailable: 2, // 5-2=3 >= 2
+			minAvailable: 2,
 		},
 		{
 			name:         "single task, minAvailable is zero",
 			taskReplicas: []int32{3},
 			terminating:  3,
-			minAvailable: 0, // 3-3=0 >= 0
+			minAvailable: 0,
 		},
 		{
 			name:         "total exceeds minAvailable",
 			taskReplicas: []int32{5},
 			terminating:  1,
-			minAvailable: 2, // 5-1=4 >= 2
+			minAvailable: 2,
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			s := &restartingState{job: makeRestartingJobInfo(10, tc.taskReplicas...)}
 			status := &vcbatch.JobStatus{
-				RetryCount:   1, // < MaxRetry (10)
+				RetryCount:   1,
 				Terminating:  tc.terminating,
 				MinAvailable: tc.minAvailable,
 				State:        vcbatch.JobState{Phase: vcbatch.Restarting},
@@ -141,9 +116,6 @@ func TestRestartingState_UpdateStatus_MeetsMinAvailable(t *testing.T) {
 	}
 }
 
-// TestRestartingState_UpdateStatus_StillWaiting verifies that when
-// RetryCount < MaxRetry and (total - Terminating) < status.MinAvailable the
-// method returns false and leaves the phase unchanged.
 func TestRestartingState_UpdateStatus_StillWaiting(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -153,28 +125,28 @@ func TestRestartingState_UpdateStatus_StillWaiting(t *testing.T) {
 	}{
 		{
 			name:         "one pod short after terminating subtracted",
-			taskReplicas: []int32{3}, // total = 3
+			taskReplicas: []int32{3},
 			terminating:  1,
-			minAvailable: 3, // 3-1=2 < 3
+			minAvailable: 3,
 		},
 		{
 			name:         "all pods are terminating",
-			taskReplicas: []int32{4}, // total = 4
+			taskReplicas: []int32{4},
 			terminating:  4,
-			minAvailable: 1, // 4-4=0 < 1
+			minAvailable: 1,
 		},
 		{
 			name:         "no tasks at all",
-			taskReplicas: []int32{}, // total = 0
+			taskReplicas: []int32{},
 			terminating:  0,
-			minAvailable: 1, // 0-0=0 < 1
+			minAvailable: 1,
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			s := &restartingState{job: makeRestartingJobInfo(10, tc.taskReplicas...)}
 			status := &vcbatch.JobStatus{
-				RetryCount:   1, // < MaxRetry (10)
+				RetryCount:   1,
 				Terminating:  tc.terminating,
 				MinAvailable: tc.minAvailable,
 				State:        vcbatch.JobState{Phase: vcbatch.Restarting},
@@ -193,15 +165,14 @@ func TestRestartingState_UpdateStatus_StillWaiting(t *testing.T) {
 	}
 }
 
-// TestRestartingState_UpdateStatus_MaxRetryTakesPrecedence verifies that the
-// RetryCount >= MaxRetry check runs before the minAvailable check — even when
-// the minAvailable condition would also be satisfied.
+// MaxRetry check must run before the minAvailable check, even when both
+// conditions hold simultaneously.
 func TestRestartingState_UpdateStatus_MaxRetryTakesPrecedence(t *testing.T) {
 	s := &restartingState{job: makeRestartingJobInfo(3, 5)}
 	status := &vcbatch.JobStatus{
-		RetryCount:   3, // == MaxRetry → should trigger Failed
+		RetryCount:   3,
 		Terminating:  0,
-		MinAvailable: 1, // 5-0=5 >= 1, would satisfy Pending — but Failed wins
+		MinAvailable: 1,
 		State:        vcbatch.JobState{Phase: vcbatch.Restarting},
 	}
 
@@ -215,10 +186,6 @@ func TestRestartingState_UpdateStatus_MaxRetryTakesPrecedence(t *testing.T) {
 	}
 }
 
-// --- Execute: SyncJobAction branch ---
-
-// TestRestartingState_Execute_SyncJobCallsSyncJob verifies that SyncJobAction
-// delegates to SyncJob.
 func TestRestartingState_Execute_SyncJobCallsSyncJob(t *testing.T) {
 	c := captureSyncJob(t, nil)
 	s := &restartingState{job: makeRestartingJobInfo(5, 3)}
@@ -231,8 +198,6 @@ func TestRestartingState_Execute_SyncJobCallsSyncJob(t *testing.T) {
 	}
 }
 
-// TestRestartingState_Execute_SyncJobPassesJobInfo verifies the correct
-// JobInfo pointer is forwarded to SyncJob.
 func TestRestartingState_Execute_SyncJobPassesJobInfo(t *testing.T) {
 	c := captureSyncJob(t, nil)
 	info := makeRestartingJobInfo(5, 3)
@@ -246,12 +211,10 @@ func TestRestartingState_Execute_SyncJobPassesJobInfo(t *testing.T) {
 	}
 }
 
-// TestRestartingState_Execute_SyncJobUpdateFnIsRestartingUpdateStatus verifies
-// that the updateFn passed to SyncJob is restartingUpdateStatus by calling it
-// and observing its output.
+// MaxRetry==RetryCount makes restartingUpdateStatus produce Failed; we use
+// that signature to verify SyncJob received the right updateFn.
 func TestRestartingState_Execute_SyncJobUpdateFnIsRestartingUpdateStatus(t *testing.T) {
 	c := captureSyncJob(t, nil)
-	// MaxRetry=2, RetryCount=2 → updateFn should set Failed
 	s := &restartingState{job: makeRestartingJobInfo(2, 3)}
 
 	if err := s.Execute(Action{Action: v1alpha1.SyncJobAction}); err != nil {
@@ -272,8 +235,6 @@ func TestRestartingState_Execute_SyncJobUpdateFnIsRestartingUpdateStatus(t *test
 	}
 }
 
-// TestRestartingState_Execute_SyncJobPropagatesError verifies SyncJob errors
-// are surfaced.
 func TestRestartingState_Execute_SyncJobPropagatesError(t *testing.T) {
 	want := errors.New("sync failed")
 	captureSyncJob(t, want)
@@ -284,10 +245,6 @@ func TestRestartingState_Execute_SyncJobPropagatesError(t *testing.T) {
 	}
 }
 
-// --- Execute: RestartTask / RestartPod / RestartPartition branch ---
-
-// TestRestartingState_Execute_RestartTargetActionsCallKillTarget verifies that
-// all three granular restart actions delegate to KillTarget.
 func TestRestartingState_Execute_RestartTargetActionsCallKillTarget(t *testing.T) {
 	actions := []struct {
 		name   string
@@ -312,8 +269,6 @@ func TestRestartingState_Execute_RestartTargetActionsCallKillTarget(t *testing.T
 	}
 }
 
-// TestRestartingState_Execute_RestartTargetForwardsTarget verifies the Target
-// embedded in the Action is passed unchanged to KillTarget.
 func TestRestartingState_Execute_RestartTargetForwardsTarget(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -351,11 +306,8 @@ func TestRestartingState_Execute_RestartTargetForwardsTarget(t *testing.T) {
 	}
 }
 
-// TestRestartingState_Execute_RestartTargetUpdateFnIsRestartingUpdateStatus
-// verifies the updateFn forwarded to KillTarget is restartingUpdateStatus.
 func TestRestartingState_Execute_RestartTargetUpdateFnIsRestartingUpdateStatus(t *testing.T) {
 	c := captureKillTarget(t, nil)
-	// MaxRetry=2, RetryCount=2 → updateFn should set Failed
 	s := &restartingState{job: makeRestartingJobInfo(2, 3)}
 
 	if err := s.Execute(Action{Action: v1alpha1.RestartTaskAction}); err != nil {
@@ -376,8 +328,6 @@ func TestRestartingState_Execute_RestartTargetUpdateFnIsRestartingUpdateStatus(t
 	}
 }
 
-// TestRestartingState_Execute_RestartTargetPropagatesError verifies KillTarget
-// errors are surfaced.
 func TestRestartingState_Execute_RestartTargetPropagatesError(t *testing.T) {
 	want := errors.New("kill target failed")
 	captureKillTarget(t, want)
@@ -388,10 +338,6 @@ func TestRestartingState_Execute_RestartTargetPropagatesError(t *testing.T) {
 	}
 }
 
-// --- Execute: default branch (all other actions -> KillJob) ---
-
-// TestRestartingState_Execute_DefaultActionsCallKillJob verifies that every
-// action not handled explicitly delegates to KillJob.
 func TestRestartingState_Execute_DefaultActionsCallKillJob(t *testing.T) {
 	defaultActions := []struct {
 		name   string
@@ -419,9 +365,8 @@ func TestRestartingState_Execute_DefaultActionsCallKillJob(t *testing.T) {
 	}
 }
 
-// TestRestartingState_Execute_DefaultUsesRetainPhaseNone verifies the default
-// branch passes PodRetainPhaseNone — all pods are killed including completed
-// ones, to allow a clean restart.
+// Default branch uses PodRetainPhaseNone so all pods (including completed)
+// are killed for a clean restart.
 func TestRestartingState_Execute_DefaultUsesRetainPhaseNone(t *testing.T) {
 	c := captureKillJob(t, nil)
 	s := &restartingState{job: makeRestartingJobInfo(5, 3)}
@@ -434,8 +379,6 @@ func TestRestartingState_Execute_DefaultUsesRetainPhaseNone(t *testing.T) {
 	}
 }
 
-// TestRestartingState_Execute_DefaultPassesJobInfo verifies the correct
-// JobInfo pointer is forwarded to KillJob.
 func TestRestartingState_Execute_DefaultPassesJobInfo(t *testing.T) {
 	c := captureKillJob(t, nil)
 	info := makeRestartingJobInfo(5, 3)
@@ -449,11 +392,8 @@ func TestRestartingState_Execute_DefaultPassesJobInfo(t *testing.T) {
 	}
 }
 
-// TestRestartingState_Execute_DefaultUpdateFnIsRestartingUpdateStatus verifies
-// the updateFn passed to KillJob is restartingUpdateStatus.
 func TestRestartingState_Execute_DefaultUpdateFnIsRestartingUpdateStatus(t *testing.T) {
 	c := captureKillJob(t, nil)
-	// MaxRetry=2, RetryCount=2 → updateFn should set Failed
 	s := &restartingState{job: makeRestartingJobInfo(2, 3)}
 
 	if err := s.Execute(Action{Action: v1alpha1.RestartJobAction}); err != nil {
@@ -474,8 +414,6 @@ func TestRestartingState_Execute_DefaultUpdateFnIsRestartingUpdateStatus(t *test
 	}
 }
 
-// TestRestartingState_Execute_DefaultPropagatesError verifies KillJob errors
-// are surfaced for the default branch.
 func TestRestartingState_Execute_DefaultPropagatesError(t *testing.T) {
 	want := errors.New("kill failed")
 	captureKillJob(t, want)
